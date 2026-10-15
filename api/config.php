@@ -26,11 +26,12 @@ $env = function ($cle, $defaut = null) {
     return ($v === false || $v === '' || $v === null) ? $defaut : $v;
 };
 
-$dbHost = $env('DB_HOST', '127.0.0.1');
-$dbPort = $env('DB_PORT', '5432');
-$dbName = $env('DB_NAME', 'iai_vote');
-$dbUser = $env('DB_USER', 'postgres');
-$dbPass = $env('DB_PASS', 'postgres');
+$dbHost    = $env('DB_HOST', '127.0.0.1');
+$dbPort    = $env('DB_PORT', '5432');
+$dbName    = $env('DB_NAME', 'iai_vote');
+$dbUser    = $env('DB_USER', 'postgres');
+$dbPass    = $env('DB_PASS', 'postgres');
+$dbSslMode = $env('DB_SSLMODE', ''); // vide en local, 'require' en ligne
 
 // Render : DATABASE_URL a la priorite si presente
 $databaseUrl = $env('DATABASE_URL');
@@ -43,6 +44,17 @@ if ($databaseUrl) {
         $dbUser = $u['user'] ?? $dbUser;
         $dbPass = $u['pass'] ?? $dbPass;
     }
+    // SSL : la base managee Render impose une connexion chiffree.
+    // On lit sslmode dans l'URL si present, sinon on force 'require'.
+    if ($u && isset($u['query'])) {
+        parse_str($u['query'], $query);
+        if (!empty($query['sslmode'])) {
+            $dbSslMode = $query['sslmode'];
+        }
+    }
+    if ($dbSslMode === '') {
+        $dbSslMode = 'require';
+    }
 }
 
 define('DB_HOST', $dbHost);
@@ -50,6 +62,7 @@ define('DB_PORT', $dbPort);
 define('DB_NAME', $dbName);
 define('DB_USER', $dbUser);
 define('DB_PASS', $dbPass);
+define('DB_SSLMODE', $dbSslMode);
 
 // Secret servant a signer les jetons ET a calculer le hash anonyme
 // des votes. En production, definir la variable d'environnement APP_SECRET.
@@ -134,6 +147,9 @@ function getDB() {
 
     try {
         $dsn = 'pgsql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME;
+        if (DB_SSLMODE !== '') {
+            $dsn .= ';sslmode=' . DB_SSLMODE;
+        }
         $pdo = new PDO($dsn, DB_USER, DB_PASS, [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
