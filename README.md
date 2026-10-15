@@ -113,7 +113,21 @@ iai-vote/
 
 > ⚠️ **Changez le mot de passe administrateur** avant tout usage réel.
 
-## 2. Déployer sur Render.com
+## 2. Déploiement en ligne
+
+### alwaysdata (solution retenue — gratuite, sans carte bancaire)
+
+> **Le site est en ligne :** https://digitalelect.alwaysdata.net
+>
+> Guide complet : **[GUIDE-ALWAYSDATA.md](GUIDE-ALWAYSDATA.md)**
+> (compte, base, envoi des fichiers par FTPS, dépannage).
+
+Résumé : compte alwaysdata `digitalelect` → base PostgreSQL
+`digitalelect_vote` → fichiers envoyés par **FTPS** dans `/www` → identifiants
+de la base placés dans `api/config.local.php` (non versionné) →
+`api/install.php` lancé **une fois** puis supprimé.
+
+### Render.com (alternative — exige une carte bancaire)
 
 1. Poussez le projet sur GitHub.
 2. Sur Render : **New → Blueprint**, sélectionnez le dépôt.

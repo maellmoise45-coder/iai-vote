@@ -26,6 +26,20 @@ $env = function ($cle, $defaut = null) {
     return ($v === false || $v === '' || $v === null) ? $defaut : $v;
 };
 
+/* ------------------------------------------------------------
+   SURCHARGE LOCALE (fichier non versionne)
+   ------------------------------------------------------------
+   Si le fichier api/config.local.php existe, il est charge AVANT
+   la lecture des variables. Il peut y definir les identifiants
+   de la base via putenv('DB_HOST=...'), etc. Pratique pour un
+   hebergement mutualise (alwaysdata) ou l'on ne peut pas creer
+   de variables d'environnement.
+   ------------------------------------------------------------ */
+$fichierLocal = __DIR__ . '/config.local.php';
+if (is_file($fichierLocal)) {
+    require $fichierLocal;
+}
+
 $dbHost    = $env('DB_HOST', '127.0.0.1');
 $dbPort    = $env('DB_PORT', '5432');
 $dbName    = $env('DB_NAME', 'iai_vote');

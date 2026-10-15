@@ -4,6 +4,7 @@
 
 # Configuration locale (contient des secrets) : ne jamais committer
 .env
+api/config.local.php
 
 # Dependances / artefacts
 node_modules/

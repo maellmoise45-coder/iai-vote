@@ -1,5 +1,12 @@
 # Guide de déploiement — Digital-Elect
 
+> ⚠️ **Note (octobre 2026) :** Render **exige désormais une carte bancaire**,
+> même pour la base PostgreSQL gratuite. L'application a donc été déployée sur
+> **alwaysdata** (gratuit, sans carte) :
+> 👉 **https://digitalelect.alwaysdata.net** — voir **[GUIDE-ALWAYSDATA.md](GUIDE-ALWAYSDATA.md)**.
+>
+> Ce document décrit la **méthode Render** (conservée comme alternative).
+
 Ce guide met l'application en ligne sur **Render.com** (gratuit), avec une base
 **PostgreSQL** créée automatiquement.
 
