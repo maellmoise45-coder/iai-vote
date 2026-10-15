@@ -1,0 +1,26 @@
+# ============================================================
+#  Blueprint Render.com - Digital-Elect
+# ------------------------------------------------------------
+#  Deploie :
+#    - un service web Docker (l'application PHP)
+#    - une base PostgreSQL managée
+#
+#  Render lit ce fichier automatiquement ("New > Blueprint").
+# ============================================================
+services:
+  - type: web
+    name: iai-vote
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: APP_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: iai-vote-db
+          property: connectionString
+
+databases:
+  - name: iai-vote-db
+    plan: free

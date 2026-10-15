@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Résultats — Digital-Elect</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header class="entete">
+        <div class="marque">Digital-Elect <span>Résultats publics</span></div>
+        <div class="entete-actions">
+            <a href="index.html" class="btn btn-neutre btn-petit">Connexion</a>
+        </div>
+    </header>
+
+    <main class="conteneur">
+        <div class="carte">
+            <div class="carte-titre">Choisir une élection</div>
+            <select id="select-election"><option>Chargement…</option></select>
+        </div>
+        <div id="zone-resultats"></div>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/resultats.js"></script>
+</body>
+</html>

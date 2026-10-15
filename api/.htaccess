@@ -1,0 +1,17 @@
+# ============================================================
+#  /api/.htaccess
+# ============================================================
+#  Transmet l'header Authorization a PHP (sinon Apache le
+#  supprime parfois et la verification du jeton echoue).
+# ============================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+# Interdire l'execution des .sql eventuellement presents
+<FilesMatch "\.(sql|md|ini)$">
+    Require all denied
+</FilesMatch>

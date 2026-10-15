@@ -1,0 +1,21 @@
+# ============================================================
+#  Digital-Elect - fichiers a NE PAS versionner
+# ============================================================
+
+# Configuration locale (contient des secrets) : ne jamais committer
+.env
+
+# Dependances / artefacts
+node_modules/
+vendor/
+
+# Fichiers systeme / editeurs
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.idea/
+.vscode/
+
+# Serveur PostgreSQL portable (si present par erreur dans le dossier)
+pgsql/

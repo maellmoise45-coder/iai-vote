@@ -1,0 +1,30 @@
+# ============================================================
+#  Digital-Elect — durcissement Apache
+# ============================================================
+#  Ces règles s'appliquent aux pages HTML/CSS/JS servies par
+#  Apache. L'API ajoute en plus ses propres en-têtes en PHP.
+# ============================================================
+
+# Pas de listage des répertoires
+Options -Indexes
+
+<IfModule mod_headers.c>
+    # Empêche le navigateur de "deviner" le type de fichier
+    Header set X-Content-Type-Options "nosniff"
+    # Interdit l'affichage du site dans une iframe (anti-clickjacking)
+    Header set X-Frame-Options "DENY"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+
+    # Content-Security-Policy :
+    #   - scripts uniquement depuis le site (pas de <script> inline)
+    #   - images : site + data: (photos des candidats) + https
+    #   - styles : feuilles + attributs style="..." inline
+    #   - appels réseau (fetch) : uniquement vers le site
+    Header set Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+</IfModule>
+
+# Interdire l'accès direct aux fichiers sensibles
+<FilesMatch "\.(sql|md|env|example|ini|log|sh|ya?ml)$">
+    Require all denied
+</FilesMatch>

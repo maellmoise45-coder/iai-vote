@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion — Digital-Elect</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="page-connexion">
+
+    <div class="carte-connexion">
+        <div class="logo-entete">
+            <div class="logo-titre">Digital-Elect</div>
+            <div class="logo-sous">Plateforme de vote électronique</div>
+        </div>
+
+        <div id="message"></div>
+
+        <form id="form-connexion" autocomplete="on">
+            <div class="champ">
+                <label for="matricule">Matricule</label>
+                <input type="text" id="matricule" name="matricule"
+                       placeholder="ex : ETU22A001" required autofocus autocomplete="username">
+            </div>
+
+            <div class="champ">
+                <label for="mot_de_passe">Mot de passe</label>
+                <input type="password" id="mot_de_passe" name="mot_de_passe"
+                       placeholder="••••••••" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn btn-primaire btn-bloc" id="btn-connexion">
+                Se connecter
+            </button>
+        </form>
+
+        <p style="text-align:center; margin-top:20px; font-size:13px; color:var(--gris);">
+            <a href="resultats.html">Consulter les résultats publics</a>
+        </p>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/login.js"></script>
+</body>
+</html>

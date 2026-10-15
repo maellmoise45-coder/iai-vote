@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de bord — Digital-Elect</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header class="entete">
+        <div class="marque">Digital-Elect <span>Administration</span></div>
+        <div class="entete-actions">
+            <div class="entete-user" id="entete-user"></div>
+            <button class="btn btn-neutre btn-petit" id="btn-mon-mot-de-passe">Mon mot de passe</button>
+            <button class="btn btn-neutre btn-petit" id="btn-deconnexion">Déconnexion</button>
+        </div>
+    </header>
+
+    <main class="conteneur">
+        <div id="message"></div>
+
+        <!-- Statistiques -->
+        <div class="grille-stats" id="grille-stats"></div>
+
+        <!-- Onglets -->
+        <div class="onglets" id="onglets">
+            <button class="onglet actif" data-vue="elections">Élections</button>
+            <button class="onglet" data-vue="electeurs">Électeurs</button>
+            <button class="onglet" data-vue="gestionnaires" id="onglet-gestionnaires">Gestionnaires</button>
+            <button class="onglet" data-vue="journal" id="onglet-journal">Journal</button>
+        </div>
+
+        <div id="vue"></div>
+    </main>
+
+    <!-- Modale générique -->
+    <div class="modale-fond cache" id="modale">
+        <div class="modale">
+            <h2 id="modale-titre" style="margin-bottom:18px;"></h2>
+            <div id="modale-message"></div>
+            <form id="modale-form"></form>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

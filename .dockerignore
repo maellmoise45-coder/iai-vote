@@ -1,0 +1,9 @@
+# Fichiers exclus de l'image Docker (contexte de build)
+.env
+.env.*
+!.env.example
+pgsql/
+*.bat
+.git/
+.gitignore
+DEPLOIEMENT.md
