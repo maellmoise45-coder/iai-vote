@@ -4,18 +4,34 @@
  *  Installation de la base - /api/install.php
  * ============================================================
  *  A executer UNE SEULE FOIS, apres avoir configure la
- *  connexion PostgreSQL (variables d'environnement ou valeurs
- *  par defaut de config.php).
+ *  connexion PostgreSQL (config.local.php ou variables
+ *  d'environnement).
  *
- *  Cree les tables et les donnees de demonstration, uniquement
- *  si la base n'est pas deja initialisee.
+ *  SECURITE : ce script exige un jeton secret defini par
+ *  INSTALL_TOKEN (config.local.php ou variable d'environnement).
+ *  Sans jeton valide, il repond 403 et ne fait rien.
  *
- *  Exemple : http://localhost/iai-vote/api/install.php
+ *  Exemple :
+ *    curl -H "X-Install-Token: mon-jeton" \
+ *         http://localhost/iai-vote/api/install.php
+ *
+ *  IMPORTANT : apres installation, supprimez ce fichier ou
+ *  interdisez-y l'acces dans Apache.
  * ============================================================
  */
 require_once 'config.php';
 
 header('Content-Type: text/plain; charset=UTF-8');
+header('Cache-Control: no-store');
+
+/* ---- Controle du jeton d'installation ---------------------- */
+$jeton = $_SERVER['HTTP_X_INSTALL_TOKEN'] ?? ($_GET['token'] ?? '');
+if (INSTALL_TOKEN === '' || $jeton === '' || !hash_equals(INSTALL_TOKEN, (string)$jeton)) {
+    http_response_code(403);
+    echo "Acces refuse.\n";
+    echo "Definissez INSTALL_TOKEN puis fournissez-le via l'en-tete X-Install-Token.\n";
+    exit();
+}
 
 try {
     $pdo = getDB();
@@ -31,20 +47,22 @@ try {
 
     $schema = file_get_contents(__DIR__ . '/../database/schema.sql');
     if ($schema === false) {
+        http_response_code(500);
         echo "ERREUR : impossible de lire database/schema.sql\n";
-        exit(1);
+        exit();
     }
 
     $pdo->exec($schema);
 
     echo "SUCCES : base initialisee.\n\n";
-    echo "Comptes disponibles :\n";
-    echo "  administrateur : admin / 1234Zeus\n";
-    echo "  gestionnaire   : gestionnaire / gestion123\n";
-    echo "  electeurs      : ETU22A001, ETU22A002, ETU22A003 / electeur123\n\n";
+    echo "Les comptes de demonstration de database/schema.sql sont actifs.\n";
+    echo "Connectez-vous, puis changez IMMEDIATEMENT les mots de passe\n";
+    echo "de l'administrateur, du gestionnaire et du controleur.\n\n";
     echo "IMPORTANT : supprimez ou protegez ce fichier (install.php) apres installation.\n";
 
 } catch (Exception $e) {
+    // Detail dans le journal serveur uniquement, jamais dans la reponse.
+    error_log('[DigitalElect] install: ' . $e->getMessage());
     http_response_code(500);
-    echo "ERREUR : " . $e->getMessage() . "\n";
+    echo "ERREUR : l'installation a echoue. Consultez le journal du serveur.\n";
 }

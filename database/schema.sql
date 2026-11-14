@@ -8,6 +8,8 @@
 
 -- Nettoyage (ordre inverse des dependances) -------------------
 DROP TABLE IF EXISTS journal CASCADE;
+DROP TABLE IF EXISTS invitations CASCADE;
+DROP TABLE IF EXISTS emargements CASCADE;
 DROP TABLE IF EXISTS ouvertures CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS votes CASCADE;
@@ -16,12 +18,15 @@ DROP TABLE IF EXISTS elections CASCADE;
 DROP TABLE IF EXISTS utilisateurs CASCADE;
 
 -- ============================================================
---  UTILISATEURS (admin, gestionnaire, electeur)
+--  UTILISATEURS (admin, gestionnaire, controleur, electeur)
 -- ============================================================
 --  Le matricule est l'identifiant de connexion (UNIQUE).
---  Les trois roles vivent dans la meme table : c'est plus
---  simple qu'une table par role et le controle d'acces se fait
---  sur la colonne "role".
+--  Les quatre roles vivent dans la meme table : le controle
+--  d'acces se fait sur la colonne "role".
+--
+--  "zone" sert au suivi de participation par zone (amphi,
+--  salle, departement...). Elle ne contient jamais le choix
+--  de vote d'un etudiant.
 -- ============================================================
 CREATE TABLE utilisateurs (
     id             SERIAL PRIMARY KEY,
@@ -31,13 +36,16 @@ CREATE TABLE utilisateurs (
     email          VARCHAR(150) UNIQUE,
     mot_de_passe   VARCHAR(255) NOT NULL,               -- password_hash()
     role           VARCHAR(20)  NOT NULL DEFAULT 'electeur'
-                   CHECK (role IN ('admin', 'gestionnaire', 'electeur')),
+                   CHECK (role IN ('admin', 'gestionnaire', 'controleur', 'electeur')),
+    zone           VARCHAR(100),                        -- zone / amphi / salle / classe
     a_vote         BOOLEAN      NOT NULL DEFAULT FALSE, -- drapeau d'emargement (1 vote)
     actif          BOOLEAN      NOT NULL DEFAULT TRUE,
+    auto_inscrit   BOOLEAN      NOT NULL DEFAULT FALSE, -- cree via un lien de classe
     cree_le        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_utilisateurs_role ON utilisateurs(role);
+CREATE INDEX idx_utilisateurs_zone ON utilisateurs(zone);
 
 -- ============================================================
 --  ELECTIONS
@@ -94,6 +102,50 @@ CREATE INDEX idx_votes_election ON votes(election_id);
 CREATE INDEX idx_votes_candidat ON votes(candidat_id);
 
 -- ============================================================
+--  EMARGEMENTS  (participation par election, SANS le choix)
+-- ============================================================
+--  Une ligne = un electeur a participe a une election (vote
+--  valide OU bulletin nul). Aucun lien avec le candidat choisi :
+--  la table sert uniquement aux statistiques de participation
+--  par zone. Le secret du vote reste donc preserve.
+-- ============================================================
+CREATE TABLE emargements (
+    id               SERIAL PRIMARY KEY,
+    utilisateur_id   INTEGER NOT NULL REFERENCES utilisateurs(id) ON DELETE CASCADE,
+    election_id      INTEGER NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+    date_emargement  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (utilisateur_id, election_id)
+);
+
+CREATE INDEX idx_emargements_election ON emargements(election_id);
+CREATE INDEX idx_emargements_user     ON emargements(utilisateur_id);
+
+-- ============================================================
+--  INVITATIONS  (liens d'inscription par classe)
+-- ============================================================
+--  Chaque delegue (gestionnaire) genere un lien pour SA zone.
+--  L'etudiant qui ouvre le lien s'inscrit lui-meme : la zone est
+--  imposee par le lien et ne peut pas etre modifiee. Le delegue
+--  verifie ensuite la liste et peut supprimer les intrus.
+--
+--  Le token est une capacite : 32 octets aleatoires en hexa.
+--  Un nouveau lien desactive les anciens de la meme zone.
+-- ============================================================
+CREATE TABLE invitations (
+    id         SERIAL PRIMARY KEY,
+    token      VARCHAR(64)  NOT NULL UNIQUE,
+    zone       VARCHAR(100) NOT NULL,
+    cree_par   INTEGER REFERENCES utilisateurs(id) ON DELETE SET NULL,
+    actif      BOOLEAN      NOT NULL DEFAULT TRUE,
+    expire_at  TIMESTAMPTZ,
+    cree_le    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_invitations_zone  ON invitations(zone);
+CREATE INDEX idx_invitations_token ON invitations(token);
+CREATE INDEX idx_invitations_actif ON invitations(actif);
+
+-- ============================================================
 --  OUVERTURES  (chrono de vote : heure d'ouverture du bulletin)
 -- ============================================================
 --  Enregistre l'instant ou un electeur ouvre pour la premiere
@@ -139,6 +191,10 @@ CREATE TABLE journal (
 
 CREATE INDEX idx_journal_date ON journal(date_action);
 
+-- Index utilise par la limitation des tentatives de connexion
+CREATE INDEX idx_journal_tentatives
+    ON journal(action, adresse_ip, matricule, date_action);
+
 -- ============================================================
 --  DONNEES INITIALES
 -- ============================================================
@@ -171,10 +227,23 @@ VALUES (
 
 -- Quelques electeurs de demonstration
 --   mot de passe pour tous : electeur123
-INSERT INTO utilisateurs (matricule, nom, prenom, email, mot_de_passe, role) VALUES
-('ETU22A001', 'NGONO',  'Alice',   'alice@digital-elect.cm',  '$2y$10$QWCI1FOaU3Xs2mk9pTz.2.T9W2OOEL6.Rdbblf7jX.HgG/DlYmyvO', 'electeur'),
-('ETU22A002', 'MBALLA', 'Bernard', 'bernard@digital-elect.cm','$2y$10$QWCI1FOaU3Xs2mk9pTz.2.T9W2OOEL6.Rdbblf7jX.HgG/DlYmyvO', 'electeur'),
-('ETU22A003', 'FOTSO',  'Carine',  'carine@digital-elect.cm', '$2y$10$QWCI1FOaU3Xs2mk9pTz.2.T9W2OOEL6.Rdbblf7jX.HgG/DlYmyvO', 'electeur');
+INSERT INTO utilisateurs (matricule, nom, prenom, email, mot_de_passe, role, zone) VALUES
+('ETU22A001', 'NGONO',  'Alice',   'alice@digital-elect.cm',  '$2y$10$QWCI1FOaU3Xs2mk9pTz.2.T9W2OOEL6.Rdbblf7jX.HgG/DlYmyvO', 'electeur', 'Amphi A'),
+('ETU22A002', 'MBALLA', 'Bernard', 'bernard@digital-elect.cm','$2y$10$QWCI1FOaU3Xs2mk9pTz.2.T9W2OOEL6.Rdbblf7jX.HgG/DlYmyvO', 'electeur', 'Amphi B'),
+('ETU22A003', 'FOTSO',  'Carine',  'carine@digital-elect.cm', '$2y$10$QWCI1FOaU3Xs2mk9pTz.2.T9W2OOEL6.Rdbblf7jX.HgG/DlYmyvO', 'electeur', 'Amphi A');
+
+-- Compte controleur de demonstration
+--   matricule : controleur
+--   mot de passe : controle123
+INSERT INTO utilisateurs (matricule, nom, prenom, email, mot_de_passe, role)
+VALUES (
+    'controleur',
+    'Controleur',
+    'Election',
+    'controleur@digital-elect.cm',
+    '$2y$10$mJ8c5ReYC/bC0s9MFDm46.mnR28VtylxaQj5boFvlO6m7keg3eAgS',
+    'controleur'
+);
 
 -- Election de demonstration
 INSERT INTO elections (titre, description, statut, date_debut, date_fin, resultats_publics)

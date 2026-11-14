@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="titre">
+  <title id="titre">Logo Digital-Elect</title>
+  <defs>
+    <linearGradient id="bleu" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="0.55" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="voile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#eaf2ff" stop-opacity="0.98"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="17" fill="url(#bleu)"/>
+  <circle cx="50" cy="13" r="10" fill="#ffffff" opacity="0.09"/>
+  <circle cx="12" cy="54" r="13" fill="#ffffff" opacity="0.07"/>
+
+  <!-- Bulletin qui glisse dans l'urne -->
+  <g transform="rotate(-13 32 27)">
+    <rect x="21" y="7" width="27" height="32" rx="5" fill="url(#voile)"/>
+    <path d="M27 22.5l4.2 4.2 8.3-9.4" fill="none" stroke="#2563eb"
+          stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Urne -->
+  <path d="M13 33h38a4 4 0 0 1 4 4v13a6 6 0 0 1-6 6H15a6 6 0 0 1-6-6V37a4 4 0 0 1 4-4Z"
+        fill="#ffffff"/>
+  <rect x="22" y="38" width="20" height="4" rx="2" fill="#2563eb" opacity="0.18"/>
+  <path d="M19 51h26" stroke="#2563eb" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+</svg>

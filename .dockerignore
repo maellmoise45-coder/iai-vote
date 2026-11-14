@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+api/config.local.php
 pgsql/
 *.bat
 .git/

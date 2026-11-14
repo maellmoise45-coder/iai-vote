@@ -1,17 +1,42 @@
 /* ============================================================
-   Tableau de bord — admin / gestionnaire
+   Tableau de bord — admin / gestionnaire (délégué de classe)
+   ------------------------------------------------------------
+   V1.2 :
+     - le gestionnaire ne crée et ne modifie plus de profil ;
+     - il consulte uniquement les électeurs de SA classe et peut
+       retirer un intrus de sa liste ;
+     - il génère le lien d'inscription de sa classe ;
+     - les résultats s'affichent en diagramme en bandes.
    ============================================================ */
 
 const user = protegerPage(['admin', 'gestionnaire']);
 const estAdmin = user && user.role === 'admin';
 
+const LIBELLE_ROLE = {
+    admin: 'Administrateur',
+    gestionnaire: 'Délégué de classe',
+};
+
+let vueActive = estAdmin ? 'elections' : 'invitation';
+let etatComptes = { role: 'electeur', q: '', page: 1 };
+
 if (user) {
     document.getElementById('entete-user').innerHTML =
-        `<b>${echapper(user.prenom)} ${echapper(user.nom)}</b><small>${estAdmin ? 'Administrateur' : 'Gestionnaire'}</small>`;
-    // Les onglets réservés à l'admin
+        `<b>${echapper(user.prenom)} ${echapper(user.nom)}</b>` +
+        `<small>${LIBELLE_ROLE[user.role] || echapper(user.role)}${
+            !estAdmin && user.zone ? ' — ' + echapper(user.zone) : ''}</small>`;
+
+    // Le délégué n'a accès qu'à sa classe et aux liens d'inscription.
     if (!estAdmin) {
-        document.getElementById('onglet-gestionnaires').remove();
-        document.getElementById('onglet-journal').remove();
+        ['onglet-elections', 'onglet-gestionnaires', 'onglet-controleurs', 'onglet-suivi', 'onglet-journal']
+            .forEach(id => document.getElementById(id)?.remove());
+
+        const ongletInvitation = document.getElementById('onglet-invitation');
+        if (ongletInvitation) ongletInvitation.textContent = 'Ma classe';
+
+        vueActive = 'invitation';
+        document.querySelectorAll('.onglet').forEach(o =>
+            o.classList.toggle('actif', o.dataset.vue === 'invitation'));
     }
 }
 
@@ -60,7 +85,6 @@ document.getElementById('modale').addEventListener('click', (e) => {
 });
 
 /* ---------- Navigation par onglets ---------- */
-let vueActive = 'elections';
 document.getElementById('onglets').addEventListener('click', (e) => {
     const bouton = e.target.closest('.onglet');
     if (!bouton) return;
@@ -71,11 +95,22 @@ document.getElementById('onglets').addEventListener('click', (e) => {
 });
 
 function afficherVue() {
+    Suivi.arreter(); // arrête un éventuel rafraîchissement live précédent
+
     const vue = document.getElementById('vue');
     vue.innerHTML = '<div class="carte"><p class="vide">Chargement…</p></div>';
+
+    // Sécurité côté client : un gestionnaire n'a pas accès aux élections.
+    if (!estAdmin && !['electeurs', 'invitation'].includes(vueActive)) {
+        vueActive = 'invitation';
+    }
+
     if (vueActive === 'elections') vueElections(vue);
     else if (vueActive === 'electeurs') vueComptes(vue, 'electeur');
     else if (vueActive === 'gestionnaires') vueComptes(vue, 'gestionnaire');
+    else if (vueActive === 'controleurs') vueComptes(vue, 'controleur');
+    else if (vueActive === 'invitation') vueInvitation(vue);
+    else if (vueActive === 'suivi') vueSuivi(vue);
     else if (vueActive === 'journal') vueJournal(vue);
 }
 
@@ -86,8 +121,22 @@ async function chargerStats() {
     const { data } = await API.get('statistiques.php');
     if (!data.success) return;
     const s = data.stats;
-    document.getElementById('grille-stats').innerHTML = `
+    const grille = document.getElementById('grille-stats');
+
+    if (s.role === 'gestionnaire') {
+        grille.innerHTML = `
+            <div class="stat"><div class="valeur">${s.electeurs}</div><div class="libelle">Élèves dans ma classe</div></div>
+            <div class="stat"><div class="valeur">${s.auto_inscrits}</div><div class="libelle">Inscrits via le lien</div></div>
+            <div class="stat"><div class="valeur">${s.elections}</div><div class="libelle">Élections</div></div>
+            <div class="stat"><div class="valeur">${s.en_cours}</div><div class="libelle">Scrutins en cours</div></div>
+        `;
+        return;
+    }
+
+    grille.innerHTML = `
         <div class="stat"><div class="valeur">${s.electeurs}</div><div class="libelle">Électeurs inscrits</div></div>
+        <div class="stat"><div class="valeur">${s.auto_inscrits || 0}</div><div class="libelle">Inscrits via un lien</div></div>
+        <div class="stat"><div class="valeur">${s.gestionnaires || 0}</div><div class="libelle">Délégués</div></div>
         <div class="stat"><div class="valeur">${s.elections}</div><div class="libelle">Élections</div></div>
         <div class="stat"><div class="valeur">${s.en_cours}</div><div class="libelle">Scrutins en cours</div></div>
         <div class="stat"><div class="valeur">${s.votes}</div><div class="libelle">Votes exprimés</div></div>
@@ -95,7 +144,7 @@ async function chargerStats() {
 }
 
 /* ============================================================
-   VUE : ÉLECTIONS
+   VUE : ÉLECTIONS (admin)
    ============================================================ */
 async function vueElections(conteneur) {
     const { data } = await API.get('elections.php');
@@ -111,7 +160,7 @@ async function vueElections(conteneur) {
     if (elections.length === 0) {
         html += `<p class="vide">Aucune élection. Créez-en une pour commencer.</p>`;
     } else {
-        html += `<table class="tableau">
+        html += `<div class="tableau-scroll"><table class="tableau">
             <thead><tr>
                 <th>Titre</th><th>Statut</th><th>Dates</th>
                 <th>Cand.</th><th>Votes</th><th>Actions</th>
@@ -139,7 +188,7 @@ async function vueElections(conteneur) {
                 </div></td>
             </tr>`;
         }
-        html += `</tbody></table>`;
+        html += `</tbody></table></div>`;
     }
     html += `</div>`;
     conteneur.innerHTML = html;
@@ -171,9 +220,9 @@ function modaleElection(election) {
         <div class="champ"><label>Description</label>
             <textarea name="description">${echapper(e.description || '')}</textarea></div>
         <div class="champ"><label>Date de début</label>
-            <input type="datetime-local" name="date_debut" value="${e.date_debut ? e.date_debut.slice(0,16) : ''}"></div>
+            <input type="datetime-local" name="date_debut" value="${echapper(e.date_debut ? e.date_debut.slice(0,16) : '')}"></div>
         <div class="champ"><label>Date de fin</label>
-            <input type="datetime-local" name="date_fin" value="${e.date_fin ? e.date_fin.slice(0,16) : ''}"></div>`;
+            <input type="datetime-local" name="date_fin" value="${echapper(e.date_fin ? e.date_fin.slice(0,16) : '')}"></div>`;
 
     ouvrirModale(election ? 'Modifier l\'élection' : 'Nouvelle élection', champs, async (fd) => {
         const corps = {
@@ -263,6 +312,12 @@ function modaleMonMotDePasse() {
         if (!rep.ok || !rep.data.success) return rep.data.error || 'Erreur.';
 
         fermerModale();
+        if (rep.data.reconnecter) {
+            API.clearSession();
+            afficherMessage('message', rep.data.message || 'Mot de passe modifié. Reconnectez-vous.', 'succes');
+            setTimeout(() => location.href = 'index.html', 1800);
+            return null;
+        }
         afficherMessage('message', 'Mot de passe modifié avec succès.', 'succes');
         return null;
     }, 'Changer');
@@ -339,7 +394,7 @@ async function modaleCandidats(election) {
     const candidats = data.data || [];
 
     let liste = candidats.length
-        ? '<table class="tableau"><tbody>' + candidats.map(c => `
+        ? '<div class="tableau-scroll"><table class="tableau tableau-compact"><tbody>' + candidats.map(c => `
             <tr>
                 <td style="width:52px">${vignetteCandidat(c)}</td>
                 <td><b>${echapper(c.prenom)} ${echapper(c.nom)}</b><br>
@@ -349,7 +404,7 @@ async function modaleCandidats(election) {
                     <button class="btn btn-danger btn-petit" data-del="${c.id}">Suppr.</button>
                 </td>
             </tr>
-          `).join('') + '</tbody></table>'
+          `).join('') + '</tbody></table></div>'
         : '<p class="vide">Aucun candidat.</p>';
 
     const champs = `
@@ -438,7 +493,7 @@ function modaleEditerCandidat(election, c) {
     brancherChampPhoto();
 }
 
-/* ---------- Résultats (modale) ---------- */
+/* ---------- Résultats (modale) — diagramme en bandes ---------- */
 async function modaleResultats(election) {
     const { ok, data } = await API.get('resultats.php?election_id=' + election.id);
     if (!ok || !data.success) {
@@ -446,35 +501,20 @@ async function modaleResultats(election) {
         return;
     }
 
-    let html = `<p style="color:var(--gris); font-size:14px; margin-bottom:6px;">
-        ${data.total_votes} vote(s) — participation ${data.participation}% (${data.inscrits} inscrits)${
-            Number(data.votes_nuls || 0) > 0 ? ` — dont <b>${data.votes_nuls}</b> nul(s)` : ''}</p>`;
-
-    if (data.candidats.length === 0) {
-        html += '<p class="vide">Aucun candidat.</p>';
-    } else {
-        for (const c of data.candidats) {
-            html += `<div class="barre-resultat">
-                <div class="barre-tete">
-                    <span style="display:flex; align-items:center; gap:10px;">${vignetteCandidat(c)} ${echapper(c.prenom)} ${echapper(c.nom)}</span>
-                    <span>${c.nombre_voix} voix (${c.pourcentage}%)</span></div>
-                <div class="barre-fond"><div class="barre-remplissage" style="width:${c.pourcentage}%"></div></div>
-            </div>`;
-        }
-    }
-
-    // Bulletins nuls (chrono écoulé) : comptés à part.
     const nuls = Number(data.votes_nuls || 0);
+    let html = `<p class="resume-resultats">
+        <b>${data.total_votes}</b> vote(s) exprimé(s) — participation <b>${data.participation}%</b>
+        (${data.inscrits} inscrits)${nuls > 0 ? ` — dont <b>${nuls}</b> nul(s)` : ''}
+    </p>`;
+
+    html += Graphe.rendre(data.candidats || [], {
+        votants: data.total_votes || 0,
+        nuls: nuls > 0 ? nuls : null,
+        note: `${data.votes_valides || 0} bulletin(s) valide(s) sur ${data.total_votes || 0} vote(s) exprimé(s) — pourcentages calculés sur les votants.`,
+    });
+
     if (nuls > 0) {
-        const total = Number(data.total_votes || 0);
-        const pct = total > 0 ? Math.round(nuls * 100 / total) : 0;
-        html += `<div class="barre-resultat">
-            <div class="barre-tete">
-                <span style="display:flex; align-items:center; gap:10px;">
-                    <span class="vignette vignette-nulle">⊘</span> Votes nuls (temps de vote écoulé)</span>
-                <span>${nuls} voix</span></div>
-            <div class="barre-fond"><div class="barre-remplissage barre-nulle" style="width:${pct}%"></div></div>
-        </div>`;
+        html += `<div class="nuls-bloc">⊘ ${nuls} bulletin(s) nul(s) — bulletins blancs et temps de vote écoulé.</div>`;
     }
 
     // Publication explicite (uniquement après clôture, si pas déjà publiée).
@@ -501,44 +541,134 @@ async function modaleResultats(election) {
 }
 
 /* ============================================================
-   VUE : COMPTES (électeurs / gestionnaires)
+   VUE : COMPTES
+   ------------------------------------------------------------
+   admin        : tous les comptes, création + modification.
+   gestionnaire : électeurs de SA classe, suppression seule.
    ============================================================ */
 async function vueComptes(conteneur, role) {
-    const titreRole = role === 'electeur' ? 'Électeurs' : 'Gestionnaires';
-    const { data } = await API.get('electeurs.php?role=' + role);
+    const titres = {
+        electeur: 'Électeurs',
+        gestionnaire: 'Délégués',
+        controleur: 'Contrôleurs',
+    };
+    const titreRole = titres[role] || 'Comptes';
+
+    if (etatComptes.role !== role) {
+        etatComptes = { role, q: '', page: 1 };
+    }
+
+    const params = new URLSearchParams({ role });
+    if (etatComptes.q) params.set('q', etatComptes.q);
+    params.set('page', String(etatComptes.page || 1));
+
+    const { ok, data } = await API.get('electeurs.php?' + params.toString());
+    if (!ok || !data.success) {
+        conteneur.innerHTML = `<div class="carte">
+            <div class="carte-titre"><span>${titreRole}</span></div>
+            <p class="vide">${echapper(data.error || 'Liste indisponible.')}</p>
+        </div>`;
+        return;
+    }
+
     const comptes = data.data || [];
+    const total = Number(data.total || comptes.length);
+    const page = Number(data.page || 1);
+    const pages = Number(data.pages || 1);
 
     let html = `
         <div class="carte">
             <div class="carte-titre">
-                <span>${titreRole} (${data.total || comptes.length})</span>
-                <button class="btn btn-primaire btn-petit" id="btn-nouveau-compte">+ Nouveau</button>
+                <span>${titreRole}${!estAdmin && data.ma_zone ? ' — ' + echapper(data.ma_zone) : ''} (${total})</span>
+                ${estAdmin
+                    ? `<button class="btn btn-primaire btn-petit" id="btn-nouveau-compte">+ Nouveau</button>`
+                    : `<span class="badge badge-bleu">Ma classe</span>`}
             </div>`;
 
+    if (!estAdmin) {
+        html += `<div class="zone-bandeau">
+            <span class="cadenas" aria-hidden="true">🏫</span>
+            <span>Classe : <span class="zone-nom">${echapper(data.ma_zone || 'non renseignée')}</span></span>
+        </div>
+        <p class="aide">
+            Vous consultez uniquement les élèves de votre classe. Vous pouvez retirer un profil
+            qui ne correspond pas à votre liste. La création et la modification des profils
+            sont réservées à l'administration.
+        </p>`;
+    }
+
+    html += `<form class="barre-outils" id="form-recherche">
+        <input type="search" name="q" value="${echapper(etatComptes.q)}"
+               placeholder="Rechercher un matricule, un nom, un email…"
+               aria-label="Rechercher un compte">
+        <button class="btn btn-neutre btn-petit" type="submit">Rechercher</button>
+        ${etatComptes.q ? `<button class="btn btn-neutre btn-petit" type="button" id="btn-effacer-recherche">Effacer</button>` : ''}
+    </form>`;
+
     if (comptes.length === 0) {
-        html += `<p class="vide">Aucun compte.</p>`;
+        html += `<p class="vide">${etatComptes.q
+            ? 'Aucun compte ne correspond à cette recherche.'
+            : 'Aucun compte pour le moment.'}</p>`;
     } else {
-        html += `<table class="tableau">
-            <thead><tr><th>Matricule</th><th>Nom</th><th>Email</th><th>Statut</th><th>Actions</th></tr></thead><tbody>`;
+        html += `<div class="tableau-scroll"><table class="tableau">
+            <thead><tr>
+                <th>Matricule</th><th>Nom</th><th>Email</th><th>Zone</th>
+                <th>Inscription</th><th>Statut</th><th>Actions</th>
+            </tr></thead><tbody>`;
         for (const u of comptes) {
             html += `<tr>
                 <td><b>${echapper(u.matricule)}</b></td>
                 <td>${echapper(u.prenom)} ${echapper(u.nom)}</td>
                 <td style="font-size:13px">${echapper(u.email || '—')}</td>
+                <td>${u.zone ? echapper(u.zone) : '<span style="color:var(--gris)">—</span>'}</td>
+                <td>${u.auto_inscrit
+                    ? '<span class="badge badge-auto">Lien de classe</span>'
+                    : '<span style="color:var(--gris); font-size:12.5px;">Administration</span>'}</td>
                 <td>${u.actif ? '<span class="badge badge-vert">Actif</span>' : '<span class="badge badge-rouge">Inactif</span>'}</td>
                 <td><div class="actions">
-                    <button class="btn btn-neutre btn-petit" data-act="edit" data-id="${u.id}">Modifier</button>
-                    <button class="btn btn-neutre btn-petit" data-act="pwd" data-id="${u.id}">Mot de passe</button>
-                    ${estAdmin ? `<button class="btn btn-danger btn-petit" data-act="del" data-id="${u.id}">Suppr.</button>` : ''}
+                    ${estAdmin ? `
+                        <button class="btn btn-neutre btn-petit" data-act="edit" data-id="${u.id}">Modifier</button>
+                        <button class="btn btn-neutre btn-petit" data-act="pwd" data-id="${u.id}">Mot de passe</button>` : ''}
+                    <button class="btn btn-danger btn-petit" data-act="del" data-id="${u.id}">Suppr.</button>
                 </div></td>
             </tr>`;
         }
-        html += `</tbody></table>`;
+        html += `</tbody></table></div>`;
+
+        if (pages > 1) {
+            html += `<div class="pagination">
+                <button class="btn btn-neutre btn-petit" type="button" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>← Précédent</button>
+                <span>Page <b>${page}</b> / ${pages}</span>
+                <button class="btn btn-neutre btn-petit" type="button" data-page="${page + 1}" ${page >= pages ? 'disabled' : ''}>Suivant →</button>
+            </div>`;
+        }
     }
+
     html += `</div>`;
     conteneur.innerHTML = html;
 
-    document.getElementById('btn-nouveau-compte').addEventListener('click', () => modaleCompte(null, role));
+    document.getElementById('btn-nouveau-compte')?.addEventListener('click', () => modaleCompte(null, role));
+
+    const formRecherche = document.getElementById('form-recherche');
+    formRecherche.addEventListener('submit', (e) => {
+        e.preventDefault();
+        etatComptes.q = formRecherche.querySelector('input[name=q]').value.trim();
+        etatComptes.page = 1;
+        vueComptes(conteneur, role);
+    });
+
+    document.getElementById('btn-effacer-recherche')?.addEventListener('click', () => {
+        etatComptes.q = '';
+        etatComptes.page = 1;
+        vueComptes(conteneur, role);
+    });
+
+    conteneur.querySelectorAll('[data-page]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            etatComptes.page = parseInt(btn.dataset.page, 10) || 1;
+            vueComptes(conteneur, role);
+        });
+    });
 
     conteneur.querySelectorAll('[data-act]').forEach(btn => {
         const id = parseInt(btn.dataset.id, 10);
@@ -546,7 +676,7 @@ async function vueComptes(conteneur, role) {
         btn.addEventListener('click', () => {
             if (btn.dataset.act === 'edit') modaleCompte(compte, role);
             else if (btn.dataset.act === 'pwd') modaleMotDePasse(compte);
-            else if (btn.dataset.act === 'del') supprimerCompte(compte);
+            else if (btn.dataset.act === 'del') supprimerCompte(compte, role);
         });
     });
 }
@@ -559,6 +689,8 @@ function modaleCompte(compte, role) {
         <div class="champ"><label>Prénom</label><input name="prenom" required value="${echapper(c.prenom || '')}"></div>
         <div class="champ"><label>Nom</label><input name="nom" required value="${echapper(c.nom || '')}"></div>
         <div class="champ"><label>Email</label><input type="email" name="email" value="${echapper(c.email || '')}"></div>
+        <div class="champ"><label>Zone / classe (ex : L3 Informatique)</label>
+            <input name="zone" value="${echapper(c.zone || '')}" placeholder="ex : Amphi A, L3 Info…"></div>
         ${compte ? '' : `<div class="champ"><label>Mot de passe</label>
             <input type="text" name="mot_de_passe" required placeholder="min. 6 caractères"></div>`}
         <div class="champ"><label>Statut</label>
@@ -572,6 +704,7 @@ function modaleCompte(compte, role) {
                 prenom: fd.get('prenom').trim(),
                 nom: fd.get('nom').trim(),
                 email: fd.get('email').trim(),
+                zone: fd.get('zone').trim(),
                 actif: fd.get('actif') === 'true',
             });
             if (!rep.ok || !rep.data.success) return rep.data.error || 'Erreur.';
@@ -581,10 +714,12 @@ function modaleCompte(compte, role) {
                 prenom: fd.get('prenom').trim(),
                 nom: fd.get('nom').trim(),
                 email: fd.get('email').trim(),
+                zone: fd.get('zone').trim(),
                 mot_de_passe: fd.get('mot_de_passe'),
                 role,
             });
             if (!rep.ok || !rep.data.success) return rep.data.error || 'Erreur.';
+            etatComptes = { role, q: '', page: 1 };
         }
         fermerModale();
         afficherMessage('message', 'Compte enregistré.', 'succes');
@@ -605,12 +740,292 @@ function modaleMotDePasse(compte) {
     });
 }
 
-async function supprimerCompte(compte) {
-    if (!confirm(`Supprimer le compte ${compte.matricule} ?`)) return;
+async function supprimerCompte(compte, role) {
+    const message = estAdmin
+        ? `Supprimer le compte ${compte.matricule} ?`
+        : `Retirer ${compte.matricule} (${compte.prenom} ${compte.nom}) de votre classe ?`;
+    if (!confirm(message)) return;
+
     const { ok, data } = await API.del('electeurs.php?id=' + compte.id);
     if (!ok || !data.success) { afficherMessage('message', data.error || 'Erreur.', 'erreur'); return; }
-    afficherMessage('message', 'Compte supprimé.', 'succes');
-    chargerStats(); afficherVue();
+    afficherMessage('message', data.message || 'Compte supprimé.', 'succes');
+    chargerStats();
+    vueComptes(document.getElementById('vue'), role);
+}
+
+/* ============================================================
+   VUE : LIENS D'INSCRIPTION (classe)
+   ============================================================ */
+function estInvitationActive(inv) {
+    if (!inv || !inv.actif) return false;
+    if (inv.expire_at && new Date(inv.expire_at).getTime() <= Date.now()) return false;
+    return true;
+}
+
+function lienAbsolu(lien) {
+    const base = location.href.split(/[?#]/)[0].replace(/[^/]*$/, '');
+    return base + lien;
+}
+
+async function copierTexte(texte, bouton) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(texte);
+        } else {
+            const zone = document.createElement('textarea');
+            zone.value = texte;
+            zone.setAttribute('readonly', '');
+            zone.style.position = 'fixed';
+            zone.style.opacity = '0';
+            document.body.appendChild(zone);
+            zone.select();
+            document.execCommand('copy');
+            document.body.removeChild(zone);
+        }
+        if (bouton) {
+            const initial = bouton.textContent;
+            bouton.textContent = 'Copié ✓';
+            setTimeout(() => { bouton.textContent = initial; }, 1500);
+        }
+        afficherMessage('message', 'Lien d\'inscription copié.', 'succes');
+    } catch (e) {
+        afficherMessage('message', 'Copie impossible. Sélectionnez le lien et copiez-le à la main.', 'erreur');
+    }
+}
+
+function blocLienInvitation(inv) {
+    const url = lienAbsolu(inv.lien);
+    return `<div class="lien-boite">
+        <input type="text" readonly value="${echapper(url)}" aria-label="Lien d'inscription de la classe">
+        <button type="button" class="btn btn-primaire btn-petit"
+                data-inv-act="copier" data-lien="${echapper(url)}">Copier</button>
+        <a class="btn btn-neutre btn-petit" href="${echapper(inv.lien)}"
+           target="_blank" rel="noopener">Ouvrir</a>
+    </div>`;
+}
+
+function metaInvitation(inv) {
+    return `<div class="invitation-meta">
+        <span>Inscrits : <b>${inv.inscrits || 0}</b></span>
+        <span>Via le lien : <b>${inv.auto_inscrits || 0}</b></span>
+        <span>Créé le ${formaterDateHeure(inv.cree_le)}</span>
+        ${inv.expire_at ? `<span>Expire le ${formaterDateHeure(inv.expire_at)}</span>` : ''}
+        ${inv.cree_par_matricule ? `<span>Par <b>${echapper(inv.cree_par_matricule)}</b></span>` : ''}
+    </div>`;
+}
+
+function itemInvitation(inv, avecZone) {
+    const active = estInvitationActive(inv);
+    return `<div class="invitation-item${active ? '' : ' inactive'}">
+        <div class="invitation-entete">
+            <span class="zone">${avecZone ? echapper(inv.zone) : 'Lien de ma classe'}</span>
+            ${active
+                ? '<span class="badge badge-vert">Actif</span>'
+                : (inv.actif
+                    ? '<span class="badge badge-orange">Expiré</span>'
+                    : '<span class="badge badge-gris">Révoqué</span>')}
+        </div>
+        ${active ? blocLienInvitation(inv) : ''}
+        ${metaInvitation(inv)}
+        <div class="invitation-actions">
+            <button type="button" class="btn ${active ? 'btn-neutre' : 'btn-primaire'} btn-petit"
+                    data-inv-act="regenerer" data-id="${inv.id}">
+                ${active ? 'Générer un nouveau lien' : 'Réactiver avec un nouveau lien'}
+            </button>
+            ${active ? `<button type="button" class="btn btn-danger btn-petit"
+                    data-inv-act="revoquer" data-id="${inv.id}">Révoquer</button>` : ''}
+        </div>
+    </div>`;
+}
+
+async function vueInvitation(conteneur) {
+    const { ok, data } = await API.get('invitations.php');
+    if (!ok || !data.success) {
+        conteneur.innerHTML = `<div class="carte">
+            <div class="carte-titre"><span>Liens d'inscription</span></div>
+            <p class="vide">${echapper(data.error || 'Indisponible.')}</p>
+        </div>`;
+        return;
+    }
+
+    const invitations = data.invitations || [];
+    const zones = data.zones || [];
+    const maZone = data.ma_zone;
+
+    let html = '';
+
+    if (!estAdmin) {
+        if (!maZone) {
+            html = `<div class="carte">
+                <div class="carte-titre"><span>Ma classe</span></div>
+                <div class="alerte alerte-info">
+                    Aucune classe n'est associée à votre compte. Demandez à l'administrateur
+                    de renseigner votre zone (classe) avant de pouvoir générer un lien.
+                </div>
+            </div>`;
+            conteneur.innerHTML = html;
+            return;
+        }
+
+        const active = invitations.find(estInvitationActive);
+        html = `<div class="carte">
+            <div class="carte-titre">
+                <span>Lien d'inscription — ${echapper(maZone)}</span>
+                <span class="badge badge-bleu">Ma classe</span>
+            </div>
+            <p class="aide">
+                Partagez ce lien avec les étudiants de votre classe. Ils s'inscriront eux-mêmes :
+                la classe est imposée par le lien et ne peut pas être modifiée.
+                Un seul lien est actif à la fois ; en générer un nouveau désactive l'ancien.
+            </p>`;
+
+        if (active) {
+            html += `<div class="invitation-item">
+                <div class="invitation-entete">
+                    <span class="zone">${echapper(maZone)}</span>
+                    <span class="badge badge-vert">Lien actif</span>
+                </div>
+                ${blocLienInvitation(active)}
+                ${metaInvitation(active)}
+            </div>`;
+        } else {
+            html += `<div class="alerte alerte-info" style="margin-bottom:14px;">
+                Aucun lien actif pour votre classe. Générez-en un pour permettre aux étudiants
+                de s'inscrire.
+            </div>`;
+        }
+
+        html += `<div class="invitation-actions">
+            <button type="button" class="btn ${active ? 'btn-neutre' : 'btn-primaire'}"
+                    data-inv-act="creer">${active ? 'Générer un nouveau lien' : 'Générer le lien de ma classe'}</button>
+            ${active ? `<button type="button" class="btn btn-danger"
+                    data-inv-act="revoquer" data-id="${active.id}">Révoquer le lien</button>` : ''}
+        </div></div>`;
+
+        const anciens = invitations.filter(i => !estInvitationActive(i));
+        if (anciens.length) {
+            html += `<div class="carte">
+                <div class="carte-titre"><span>Anciens liens</span></div>
+                ${anciens.map(i => itemInvitation(i, false)).join('')}
+            </div>`;
+        }
+    } else {
+        html = `<div class="carte">
+            <div class="carte-titre"><span>Liens d'inscription par classe</span></div>
+            <p class="aide">
+                Choisissez une classe existante puis générez son lien. Les étudiants qui ouvrent
+                le lien s'inscrivent dans cette classe, sans pouvoir la choisir.
+            </p>`;
+
+        if (zones.length === 0) {
+            html += `<div class="alerte alerte-info">
+                Aucune classe n'existe encore. Créez d'abord un compte (délégué ou électeur)
+                en renseignant sa zone pour pouvoir générer un lien.
+            </div>`;
+        } else {
+            html += `<div class="barre-outils">
+                <select id="select-zone-invitation" aria-label="Choisir une classe">
+                    ${zones.map(z => `<option value="${echapper(z)}">${echapper(z)}</option>`).join('')}
+                </select>
+                <button type="button" class="btn btn-primaire" data-inv-act="creer">Générer le lien</button>
+            </div>`;
+        }
+
+        if (invitations.length === 0) {
+            html += `<p class="vide">Aucun lien généré pour le moment.</p>`;
+        } else {
+            html += invitations.map(i => itemInvitation(i, true)).join('');
+        }
+        html += `</div>`;
+    }
+
+    conteneur.innerHTML = html;
+    brancherInvitations(conteneur);
+}
+
+function brancherInvitations(conteneur) {
+    conteneur.querySelectorAll('[data-inv-act]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const action = btn.dataset.invAct;
+
+            if (action === 'copier') {
+                await copierTexte(btn.dataset.lien, btn);
+                return;
+            }
+
+            if (action === 'creer') {
+                const choix = document.getElementById('select-zone-invitation');
+                btn.disabled = true;
+                await creerInvitation(choix ? choix.value : '');
+                return;
+            }
+
+            if (action === 'regenerer') {
+                if (!confirm('Générer un nouveau lien ? L\'ancien lien ne fonctionnera plus.')) return;
+                btn.disabled = true;
+                const rep = await API.put('invitations.php', { id: parseInt(btn.dataset.id, 10) });
+                if (!rep.ok || !rep.data.success) {
+                    btn.disabled = false;
+                    afficherMessage('message', rep.data.error || 'Erreur.', 'erreur');
+                    return;
+                }
+                afficherMessage('message', rep.data.message || 'Nouveau lien généré.', 'succes');
+                changerVueInvitation();
+                return;
+            }
+
+            if (action === 'revoquer') {
+                if (!confirm('Révoquer ce lien ? Les étudiants qui ne sont pas encore inscrits ne pourront plus l\'utiliser.')) return;
+                btn.disabled = true;
+                const rep = await API.del('invitations.php?id=' + parseInt(btn.dataset.id, 10));
+                if (!rep.ok || !rep.data.success) {
+                    btn.disabled = false;
+                    afficherMessage('message', rep.data.error || 'Erreur.', 'erreur');
+                    return;
+                }
+                afficherMessage('message', rep.data.message || 'Lien révoqué.', 'succes');
+                changerVueInvitation();
+            }
+        });
+    });
+}
+
+function changerVueInvitation() {
+    chargerStats();
+    vueInvitation(document.getElementById('vue'));
+}
+
+async function creerInvitation(zone) {
+    const corps = zone ? { zone } : {};
+    const rep = await API.post('invitations.php', corps);
+    if (!rep.ok || !rep.data.success) {
+        afficherMessage('message', rep.data.error || 'Erreur.', 'erreur');
+        return;
+    }
+    afficherMessage('message', rep.data.message || 'Lien d\'inscription généré.', 'succes');
+    changerVueInvitation();
+}
+
+/* ============================================================
+   VUE : SUIVI LIVE (admin)
+   ============================================================ */
+function vueSuivi(conteneur) {
+    conteneur.innerHTML = `
+        <div class="carte carte-filtre">
+            <div>
+                <div class="titre-section">Suivi du vote en direct</div>
+                <div class="sous-titre-section">Participation par zone et résultats live — rafraîchissement automatique toutes les 5 s.</div>
+            </div>
+            <select id="select-suivi-election" aria-label="Choisir une élection à suivre"></select>
+        </div>
+        <div id="zone-suivi">
+            <div class="carte"><p class="vide">Chargement du suivi…</p></div>
+        </div>`;
+
+    Suivi.demarrer(
+        document.getElementById('select-suivi-election'),
+        document.getElementById('zone-suivi')
+    );
 }
 
 /* ============================================================
@@ -624,7 +1039,7 @@ async function vueJournal(conteneur) {
     if (lignes.length === 0) {
         html += `<p class="vide">Aucune action enregistrée.</p>`;
     } else {
-        html += `<table class="tableau">
+        html += `<div class="tableau-scroll"><table class="tableau">
             <thead><tr><th>Date</th><th>Acteur</th><th>Action</th><th>Détails</th><th>IP</th></tr></thead><tbody>`;
         for (const l of lignes) {
             html += `<tr>
@@ -635,7 +1050,7 @@ async function vueJournal(conteneur) {
                 <td style="font-size:12px; color:var(--gris)">${echapper(l.adresse_ip || '')}</td>
             </tr>`;
         }
-        html += `</tbody></table>`;
+        html += `</tbody></table></div>`;
     }
     html += `</div>`;
     conteneur.innerHTML = html;

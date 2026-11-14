@@ -9,10 +9,12 @@
  *     garantit "1 matricule = 1 vote" sans reveler le choix.
  *
  *  POST {election_id, candidat_id}        enregistrer un vote (electeur)
+ *  POST {election_id, vote_nul:true}      vote nul VOLONTAIRE (bulletin blanc)
  *  POST {action:'expirer', election_id}   chrono ecoule -> vote NUL + deconnexion
  *  GET  ?action=a_vote&election_id=       a vote ? + temps restant
- *  GET  ?election_id=                     liste (admin/gestionnaire)
  *
+ *  Aucune liste nominative ou individuelle des bulletins n'est
+ *  exposee : seuls les agregats (resultats.php, suivi.php) le sont.
  *  CHRONO : a l'ouverture du bulletin, une ligne 'ouvertures' est
  *  creee (une seule fois). Si l'electeur ne vote pas dans les
  *  DUREE_VOTE secondes, son bulletin est declare NUL.
@@ -27,10 +29,10 @@ switch ($method) {
     case 'GET':
         if (($_GET['action'] ?? '') === 'a_vote') {
             aVote($pdo);
-        } elseif (isset($_GET['election_id'])) {
-            getVotesByElection($pdo, (int)$_GET['election_id']);
         } else {
-            jsonResponse(['error' => 'Parametres manquants'], 400);
+            // Pas de listing des bulletins : le secret du vote et la regle
+            // "aucun choix individuel expose" l'interdisent.
+            jsonResponse(['error' => 'Action non autorisee. Utilisez resultats.php ou suivi.php.'], 400);
         }
         break;
 
@@ -58,6 +60,7 @@ switch ($method) {
  */
 function aVote($pdo) {
     $user = getAuthUser($pdo);
+    exigerRole($user, ['electeur']);
     $electionId = (int)($_GET['election_id'] ?? 0);
 
     if (!$electionId) {
@@ -115,9 +118,10 @@ function aVote($pdo) {
 function createVote($pdo, $user, $data) {
     $electionId = (int)($data['election_id'] ?? 0);
     $candidatId = (int)($data['candidat_id'] ?? 0);
+    $voteNul    = !empty($data['vote_nul']);
 
-    if (!$electionId || !$candidatId) {
-        jsonResponse(['error' => 'Election et candidat requis'], 400);
+    if (!$electionId || (!$candidatId && !$voteNul)) {
+        jsonResponse(['error' => 'Election et candidat requis (ou vote_nul)'], 400);
     }
 
     // Le matricule est lu en base : le jeton ne contient que l'identifiant.
@@ -165,6 +169,10 @@ function createVote($pdo, $user, $data) {
                 ->execute([$electionId, $hash]);
             $pdo->prepare("UPDATE utilisateurs SET a_vote = TRUE WHERE id = ?")
                 ->execute([$user['user_id']]);
+            $pdo->prepare(
+                "INSERT INTO emargements (utilisateur_id, election_id) VALUES (?, ?)
+                 ON CONFLICT (utilisateur_id, election_id) DO NOTHING"
+            )->execute([$user['user_id'], $electionId]);
             $pdo->commit();
 
             journaliser($pdo, $matricule, 'vote_nul', ['election_id' => $electionId, 'raison' => 'chrono']);
@@ -176,7 +184,29 @@ function createVote($pdo, $user, $data) {
             ], 201);
         }
 
-        // 4) Le candidat doit appartenir a l'election
+        // 4) Vote nul VOLONTAIRE (bulletin blanc) : aucun candidat choisi.
+        if ($voteNul) {
+            $pdo->prepare("INSERT INTO votes (election_id, candidat_id, hash_vote) VALUES (?, NULL, ?)")
+                ->execute([$electionId, $hash]);
+            $pdo->prepare("UPDATE utilisateurs SET a_vote = TRUE WHERE id = ?")
+                ->execute([$user['user_id']]);
+            $pdo->prepare(
+                "INSERT INTO emargements (utilisateur_id, election_id) VALUES (?, ?)
+                 ON CONFLICT (utilisateur_id, election_id) DO NOTHING"
+            )->execute([$user['user_id'], $electionId]);
+            $pdo->commit();
+
+            journaliser($pdo, $matricule, 'vote_nul', ['election_id' => $electionId, 'raison' => 'choix']);
+
+            jsonResponse([
+                'success'    => true,
+                'nul'        => true,
+                'volontaire' => true,
+                'message'    => 'Votre vote nul (bulletin blanc) a ete enregistre.'
+            ], 201);
+        }
+
+        // 4b) Le candidat doit appartenir a l'election
         $stmt = $pdo->prepare("SELECT id FROM candidats WHERE id = ? AND election_id = ?");
         $stmt->execute([$candidatId, $electionId]);
         if (!$stmt->fetch()) {
@@ -197,6 +227,12 @@ function createVote($pdo, $user, $data) {
         // 7) Marquer l'electeur comme ayant vote (emargement)
         $pdo->prepare("UPDATE utilisateurs SET a_vote = TRUE WHERE id = ?")
             ->execute([$user['user_id']]);
+
+        // 7b) Emargement par election (statistiques par zone, sans le choix)
+        $pdo->prepare(
+            "INSERT INTO emargements (utilisateur_id, election_id) VALUES (?, ?)
+             ON CONFLICT (utilisateur_id, election_id) DO NOTHING"
+        )->execute([$user['user_id'], $electionId]);
 
         $pdo->commit();
 
@@ -243,22 +279,4 @@ function expirerVote($pdo, $user, $data) {
             ? 'Temps de vote ecoule : votre bulletin a ete declare NUL. Vous avez ete deconnecte.'
             : 'Vous aviez deja vote pour cette election.'
     ]);
-}
-
-function getVotesByElection($pdo, $electionId) {
-    $user = getAuthUser($pdo);
-    exigerRole($user, ['admin', 'gestionnaire']);
-
-    // Liste anonyme : on n'expose ni matricule ni nom.
-    // LEFT JOIN : les bulletins nuls (candidat_id NULL) sont inclus.
-    $stmt = $pdo->prepare(
-        "SELECT v.id, v.election_id, v.candidat_id, v.date_vote,
-                c.nom AS candidat_nom, c.prenom AS candidat_prenom
-         FROM votes v
-         LEFT JOIN candidats c ON c.id = v.candidat_id
-         WHERE v.election_id = ?
-         ORDER BY v.date_vote DESC"
-    );
-    $stmt->execute([$electionId]);
-    jsonResponse(['success' => true, 'data' => $stmt->fetchAll()]);
 }

@@ -33,20 +33,20 @@ switch ($method) {
 
     case 'POST':
         $user = getAuthUser($pdo);
-        exigerRole($user, ['admin', 'gestionnaire']);
+        exigerRole($user, ['admin']);
         createElection($pdo, $user);
         break;
 
     case 'PUT':
         $user = getAuthUser($pdo);
-        exigerRole($user, ['admin', 'gestionnaire']);
+        exigerRole($user, ['admin']);
         updateElection($pdo, $user);
         break;
 
     case 'DELETE':
         $user = getAuthUser($pdo);
         exigerRole($user, ['admin']);
-        deleteElection($pdo);
+        deleteElection($pdo, $user);
         break;
 
     default:
@@ -63,7 +63,22 @@ function getElections($pdo) {
          FROM elections e
          ORDER BY e.cree_le DESC"
     );
-    jsonResponse(['success' => true, 'data' => $stmt->fetchAll()]);
+    $elections = $stmt->fetchAll();
+
+    // Le nombre de bulletins n'est pas une donnee publique avant
+    // publication : on le retire pour les visiteurs non autorises.
+    $user = getAuthUser($pdo, false);
+    $peutVoirVotes = $user
+        && in_array($user['user_role'] ?? '', ['admin', 'gestionnaire', 'controleur'], true);
+
+    if (!$peutVoirVotes) {
+        foreach ($elections as &$e) {
+            unset($e['nb_votes']);
+        }
+        unset($e);
+    }
+
+    jsonResponse(['success' => true, 'data' => $elections]);
 }
 
 function getElection($pdo, $id) {
@@ -77,9 +92,27 @@ function getElection($pdo, $id) {
         jsonResponse(['error' => 'Election non trouvee'], 404);
     }
 
-    $stmt = $pdo->prepare("SELECT * FROM candidats WHERE election_id = ? ORDER BY id");
+    $stmt = $pdo->prepare(
+        "SELECT id, election_id, nom, prenom, programme, photo_url, nombre_voix, cree_le
+         FROM candidats WHERE election_id = ? ORDER BY id"
+    );
     $stmt->execute([$id]);
-    $election['candidats'] = $stmt->fetchAll();
+    $candidats = $stmt->fetchAll();
+
+    // Compteurs de voix : visibles seulement si les resultats sont
+    // publics, ou pour les roles autorises.
+    $user = getAuthUser($pdo, false);
+    $peutVoirVotes = !empty($election['resultats_publics'])
+        || ($user && in_array($user['user_role'] ?? '', ['admin', 'gestionnaire', 'controleur'], true));
+
+    if (!$peutVoirVotes) {
+        foreach ($candidats as &$c) {
+            unset($c['nombre_voix']);
+        }
+        unset($c);
+    }
+
+    $election['candidats'] = $candidats;
 
     jsonResponse(['success' => true, 'data' => $election]);
 }
@@ -216,15 +249,27 @@ function updateElection($pdo, $user) {
     jsonResponse(['success' => true, 'message' => 'Election mise a jour avec succes']);
 }
 
-function deleteElection($pdo) {
-    $data = getJsonBody();
-    $id   = (int)($data['id'] ?? ($_GET['id'] ?? 0));
+function deleteElection($pdo, $user) {
+    // L'interface appelle DELETE elections.php?id=.. (sans corps JSON).
+    // On accepte aussi un corps JSON {id} pour les clients API.
+    $id = (int)($_GET['id'] ?? 0);
+    if (!$id) {
+        $raw = file_get_contents('php://input');
+        if (is_string($raw) && trim($raw) !== '') {
+            $data = json_decode($raw, true);
+            if (is_array($data)) {
+                $id = (int)($data['id'] ?? 0);
+            }
+        }
+    }
 
     if (!$id) {
         jsonResponse(['error' => 'ID de l\'election requis'], 400);
     }
 
     $pdo->prepare("DELETE FROM elections WHERE id = ?")->execute([$id]);
+
+    journaliser($pdo, 'user:' . $user['user_id'], 'suppression_election', ['id' => $id]);
 
     jsonResponse(['success' => true, 'message' => 'Election supprimee avec succes']);
 }

@@ -20,6 +20,11 @@ services:
     envVars:
       - key: APP_SECRET
         generateValue: true
+      # Jeton exige par api/install.php. La valeur generee est
+      # visible dans Render > Environment et sert d'en-tete
+      # X-Install-Token le temps de l'installation.
+      - key: INSTALL_TOKEN
+        generateValue: true
       # Adresse de la base PostgreSQL (ex. Neon) : a coller
       # au moment de la creation du service, puis modifiable
       # dans Environment.

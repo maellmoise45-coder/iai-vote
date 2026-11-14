@@ -3,13 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0c2a63">
     <title>Résultats — Digital-Elect</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 
     <header class="entete">
-        <div class="marque">Digital-Elect <span>Résultats publics</span></div>
+        <a class="marque" href="resultats.html">
+            <img class="marque-logo" src="images/logo.svg" alt="">
+            <span class="marque-texte">
+                <span class="marque-nom">Digital-Elect</span>
+                <span class="marque-role">Résultats publics</span>
+            </span>
+        </a>
         <div class="entete-actions">
             <a href="index.html" class="btn btn-neutre btn-petit">Connexion</a>
         </div>
@@ -18,12 +26,17 @@
     <main class="conteneur">
         <div class="carte">
             <div class="carte-titre">Choisir une élection</div>
-            <select id="select-election"><option>Chargement…</option></select>
+            <select id="select-election" aria-label="Choisir une élection"><option>Chargement…</option></select>
         </div>
         <div id="zone-resultats"></div>
     </main>
 
-    <script src="js/api.js"></script>
-    <script src="js/resultats.js"></script>
+    <footer class="pied-page">
+        <span class="credit">Créé par MOISE</span>
+    </footer>
+
+    <script src="js/api.js?v=8"></script>
+    <script src="js/graphe.js?v=8"></script>
+    <script src="js/resultats.js?v=8"></script>
 </body>
 </html>

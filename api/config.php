@@ -83,22 +83,49 @@ define('DB_SSLMODE', $dbSslMode);
 define('APP_NAME', 'Digital-Elect');
 define('JWT_SECRET', $env('APP_SECRET', 'iai-vote-secret-a-changer-en-production-2025'));
 
+// Jeton exige par api/install.php. Volontairement SANS valeur par defaut :
+// si INSTALL_TOKEN n'est pas defini (config.local.php ou variable
+// d'environnement), l'installation web est refusee.
+define('INSTALL_TOKEN', (string)$env('INSTALL_TOKEN', ''));
+
+// Origine autorisee pour les appels cross-origin (facultatif).
+// Par defaut vide = uniquement le meme site (aucun en-tete CORS emis).
+define('APP_ORIGIN', (string)$env('APP_ORIGIN', ''));
+
 // Duree de vote (chrono) en secondes. Au-dela, le bulletin est NUL.
 define('DUREE_VOTE', 60);
 
-// Headers CORS
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+// Nombre maxi de connexions echouees par IP sur 15 minutes.
+define('MAX_TENTATIVES_CONNEXION', 10);
+
+/* ------------------------------------------------------------
+   CORS
+   ------------------------------------------------------------
+   Le frontend est servi par le meme domaine que l'API : aucun
+   en-tete CORS n'est necessaire. Si un deploiement separe est
+   utilise, definir APP_ORIGIN (ex. https://vote.exemple.cm).
+   ------------------------------------------------------------ */
+$origine = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($origine !== '' && APP_ORIGIN !== '' && rtrim($origine, '/') === rtrim(APP_ORIGIN, '/')) {
+    header('Access-Control-Allow-Origin: ' . $origine);
+    header('Vary: Origin');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization');
+    header('Access-Control-Max-Age: 600');
+}
+
 header('Content-Type: application/json; charset=UTF-8');
+header('Cache-Control: no-store, max-age=0');
 
 // En-tetes de securite (defense en profondeur)
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()');
+header('Cross-Origin-Resource-Policy: same-origin');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
-    http_response_code(200);
+    http_response_code(APP_ORIGIN !== '' ? 204 : 200);
     exit();
 }
 
@@ -174,10 +201,12 @@ function getDB() {
         $pdo->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
         return $pdo;
     } catch (PDOException $e) {
+        // Ne JAMAIS renvoyer le detail de la connexion au navigateur :
+        // il contient l'hote, l'utilisateur et parfois le mot de passe.
+        error_log('[DigitalElect] Connexion PostgreSQL impossible : ' . $e->getMessage());
         http_response_code(500);
         echo json_encode([
-            'error' => 'Erreur de connexion a la base de donnees',
-            'detail' => $e->getMessage()
+            'error' => 'Erreur de connexion a la base de donnees. Contactez l\'administrateur.'
         ], JSON_UNESCAPED_UNICODE);
         exit();
     }
@@ -229,8 +258,16 @@ function verifyToken($token) {
  * Connexion unique : toute nouvelle connexion invalide la precedente.
  */
 function verifierSessionActive($pdo, $token, $userId) {
+    // On verifie aussi que le compte est toujours actif : un compte
+    // bloque perd immediatement l'acces, meme si son jeton existe encore.
     $stmt = $pdo->prepare(
-        "SELECT id FROM sessions WHERE utilisateur_id = ? AND token = ? AND expire_at > NOW()"
+        "SELECT s.id
+         FROM sessions s
+         JOIN utilisateurs u ON u.id = s.utilisateur_id
+         WHERE s.utilisateur_id = ?
+           AND s.token = ?
+           AND s.expire_at > NOW()
+           AND u.actif = TRUE"
     );
     $stmt->execute([$userId, $token]);
     return $stmt->fetch() !== false;
@@ -294,6 +331,43 @@ function exigerRole($user, $roles) {
 }
 
 /* ------------------------------------------------------------
+   ZONES (classes)
+   ------------------------------------------------------------
+   Une zone est un texte libre mais normalise (espaces reduits).
+   Les comparaisons sont insensibles a la casse pour eviter les
+   doublons "Amphi A" / "amphi a".
+   ------------------------------------------------------------ */
+function normaliserZone($zone) {
+    $zone = preg_replace('/\s+/u', ' ', trim((string)$zone));
+    return $zone === null ? '' : $zone;
+}
+
+/** Zone (classe) d'un compte, ou chaine vide. */
+function zoneUtilisateur($pdo, $userId) {
+    $stmt = $pdo->prepare("SELECT zone FROM utilisateurs WHERE id = ?");
+    $stmt->execute([(int)$userId]);
+    $zone = $stmt->fetchColumn();
+    return ($zone === false || $zone === null) ? '' : trim((string)$zone);
+}
+
+/** Renvoie l'orthographe existante de la zone, ou null si inconnue. */
+function zoneCanonique($pdo, $zone) {
+    $zone = normaliserZone($zone);
+    if ($zone === '') {
+        return null;
+    }
+    $stmt = $pdo->prepare(
+        "SELECT zone FROM utilisateurs
+         WHERE zone IS NOT NULL AND TRIM(zone) <> ''
+           AND LOWER(TRIM(zone)) = LOWER(?)
+         LIMIT 1"
+    );
+    $stmt->execute([$zone]);
+    $valeur = $stmt->fetchColumn();
+    return $valeur === false ? null : trim((string)$valeur);
+}
+
+/* ------------------------------------------------------------
    REPONSES / ENTREES JSON
    ------------------------------------------------------------ */
 function jsonResponse($data, $code = 200) {
@@ -346,6 +420,16 @@ function miseAJourPartielle($pdo, $table, $donnees, $autorises, $id, $transforme
             continue;
         }
 
+        // Le nom de colonne vient d'une table de correspondance codee en
+        // dur, mais on valide quand meme le format : aucune chaine
+        // arbitraire ne doit pouvoir atteindre la clause SQL.
+        $colonne = in_array($colonneSql, ['nullable', 'nullable_int', 'bool'], true)
+            ? $cleJson
+            : $colonneSql;
+        if (!preg_match('/^[a-z_][a-z0-9_]*$/', $colonne)) {
+            jsonResponse(['error' => 'Champ non autorise'], 400);
+        }
+
         $valeur = $donnees[$cleJson];
 
         if (isset($transformer[$cleJson])) {
@@ -359,9 +443,9 @@ function miseAJourPartielle($pdo, $table, $donnees, $autorises, $id, $transforme
         if ($colonneSql === 'nullable') {
             $valeur = is_string($valeur) ? trim($valeur) : $valeur;
             if ($valeur === '' || $valeur === null) {
-                $affectations[] = $cleJson . ' = NULL';
+                $affectations[] = $colonne . ' = NULL';
             } else {
-                $affectations[] = $cleJson . ' = ?';
+                $affectations[] = $colonne . ' = ?';
                 $params[] = $valeur;
             }
             continue;
@@ -369,9 +453,9 @@ function miseAJourPartielle($pdo, $table, $donnees, $autorises, $id, $transforme
 
         if ($colonneSql === 'nullable_int') {
             if ($valeur === '' || $valeur === null || (int)$valeur <= 0) {
-                $affectations[] = $cleJson . ' = NULL';
+                $affectations[] = $colonne . ' = NULL';
             } else {
-                $affectations[] = $cleJson . ' = ?';
+                $affectations[] = $colonne . ' = ?';
                 $params[] = (int)$valeur;
             }
             continue;
@@ -379,8 +463,15 @@ function miseAJourPartielle($pdo, $table, $donnees, $autorises, $id, $transforme
 
         // Booleen explicite
         if ($colonneSql === 'bool') {
-            $affectations[] = $cleJson . ' = ?';
-            $params[] = (bool)$valeur;
+            // PDO/pgsql en prepares natifs transforme le booleen PHP FALSE
+            // en chaine vide, que PostgreSQL refuse. On envoie donc
+            // explicitement 'true' ou 'false'.
+            $booleen = filter_var($valeur, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($booleen === null) {
+                jsonResponse(['error' => "Valeur booleenne invalide pour le champ '$cleJson'"], 400);
+            }
+            $affectations[] = $colonne . ' = ?';
+            $params[] = $booleen ? 'true' : 'false';
             continue;
         }
 
@@ -389,7 +480,7 @@ function miseAJourPartielle($pdo, $table, $donnees, $autorises, $id, $transforme
             continue;
         }
 
-        $affectations[] = $colonneSql . ' = ?';
+        $affectations[] = $colonne . ' = ?';
         $params[] = $valeur;
     }
 
@@ -420,6 +511,51 @@ function journaliser($pdo, $matricule, $action, $details = null) {
     } catch (Exception $e) {
         // Le journal ne doit jamais faire echouer l'action principale
         error_log('[DigitalElect] journal: ' . $e->getMessage());
+    }
+}
+
+/* ------------------------------------------------------------
+   LIMITATION DES TENTATIVES DE CONNEXION
+   ------------------------------------------------------------
+   On s'appuie sur le journal d'audit (deja present dans toutes
+   les installations) : 10 echecs maxi par couple IP + matricule
+   sur 15 minutes. Aucune table supplementaire n'est necessaire.
+   ------------------------------------------------------------ */
+function connexionTropDeTentatives($pdo, $matricule) {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    if ($ip === '') {
+        return false;
+    }
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM journal
+             WHERE action = 'connexion_echouee'
+               AND adresse_ip = ?
+               AND matricule = ?
+               AND date_action > NOW() - INTERVAL '15 minutes'"
+        );
+        $stmt->execute([$ip, $matricule]);
+        return ((int)$stmt->fetchColumn()) >= MAX_TENTATIVES_CONNEXION;
+    } catch (Exception $e) {
+        error_log('[DigitalElect] throttle: ' . $e->getMessage());
+        return false;
+    }
+}
+
+function reinitialiserTentatives($pdo, $matricule) {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    if ($ip === '') {
+        return;
+    }
+    try {
+        $pdo->prepare(
+            "DELETE FROM journal
+             WHERE action = 'connexion_echouee'
+               AND adresse_ip = ?
+               AND matricule = ?"
+        )->execute([$ip, $matricule]);
+    } catch (Exception $e) {
+        error_log('[DigitalElect] throttle reset: ' . $e->getMessage());
     }
 }
 
@@ -461,6 +597,13 @@ function enregistrerVoteNul($pdo, $electionId, $userId, $matricule, $journaliser
     $pdo->prepare("INSERT INTO votes (election_id, candidat_id, hash_vote) VALUES (?, NULL, ?)")
         ->execute([$electionId, $hash]);
     $pdo->prepare("UPDATE utilisateurs SET a_vote = TRUE WHERE id = ?")->execute([$userId]);
+
+    // Emargement par election : permet les statistiques par zone sans
+    // reveler le choix de l'electeur (aucun lien avec le candidat).
+    $pdo->prepare(
+        "INSERT INTO emargements (utilisateur_id, election_id) VALUES (?, ?)
+         ON CONFLICT (utilisateur_id, election_id) DO NOTHING"
+    )->execute([$userId, $electionId]);
 
     if ($journaliser) {
         journaliser($pdo, $matricule, 'vote_nul', ['election_id' => $electionId]);

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0c2a63">
+    <title>Contrôleur — Digital-Elect</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css?v=8">
+</head>
+<body>
+
+    <header class="entete">
+        <a class="marque" href="controle.html">
+            <img class="marque-logo" src="images/logo.svg" alt="">
+            <span class="marque-texte">
+                <span class="marque-nom">Digital-Elect</span>
+                <span class="marque-role">Espace contrôleur</span>
+            </span>
+        </a>
+        <div class="entete-actions">
+            <div class="entete-user" id="entete-user"></div>
+            <button class="btn btn-neutre btn-petit" id="btn-deconnexion">Déconnexion</button>
+        </div>
+    </header>
+
+    <main class="conteneur">
+        <div id="message"></div>
+
+        <!-- Onglets -->
+        <div class="onglets" id="onglets">
+            <button class="onglet actif" data-vue="suivi">Suivi live</button>
+            <button class="onglet" data-vue="journal">Journal</button>
+        </div>
+
+        <!-- Suivi du vote en direct -->
+        <div id="vue-suivi">
+            <div class="carte carte-filtre">
+                <div>
+                    <div class="titre-section">Suivi du vote en direct</div>
+                    <div class="sous-titre-section">
+                        Participation par zone et résultats live — rafraîchissement automatique toutes les 5 s.
+                    </div>
+                </div>
+                <select id="select-suivi-election" aria-label="Choisir une élection à suivre"></select>
+            </div>
+            <div id="zone-suivi">
+                <div class="carte"><p class="vide">Chargement du suivi…</p></div>
+            </div>
+        </div>
+
+        <!-- Journal -->
+        <div id="vue-journal" class="cache"></div>
+    </main>
+
+    <footer class="pied-page">
+        <span class="credit">Créé par MOISE</span>
+    </footer>
+
+    <script src="js/api.js?v=8"></script>
+    <script src="js/graphe.js?v=8"></script>
+    <script src="js/suivi.js?v=8"></script>
+    <script src="js/controle.js?v=8"></script>
+</body>
+</html>

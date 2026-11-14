@@ -21,19 +21,19 @@ switch ($method) {
 
     case 'POST':
         $user = getAuthUser($pdo);
-        exigerRole($user, ['admin', 'gestionnaire']);
+        exigerRole($user, ['admin']);
         createCandidat($pdo, $user);
         break;
 
     case 'PUT':
         $user = getAuthUser($pdo);
-        exigerRole($user, ['admin', 'gestionnaire']);
+        exigerRole($user, ['admin']);
         updateCandidat($pdo, $user);
         break;
 
     case 'DELETE':
         $user = getAuthUser($pdo);
-        exigerRole($user, ['admin', 'gestionnaire']);
+        exigerRole($user, ['admin']);
         deleteCandidat($pdo, $user);
         break;
 
@@ -46,7 +46,10 @@ function getCandidats($pdo) {
     if (!$electionId) {
         jsonResponse(['error' => 'election_id requis'], 400);
     }
-    $stmt = $pdo->prepare("SELECT * FROM candidats WHERE election_id = ? ORDER BY id");
+    $stmt = $pdo->prepare(
+        "SELECT id, election_id, nom, prenom, programme, photo_url, cree_le
+         FROM candidats WHERE election_id = ? ORDER BY id"
+    );
     $stmt->execute([$electionId]);
     jsonResponse(['success' => true, 'data' => $stmt->fetchAll()]);
 }

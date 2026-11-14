@@ -3,13 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0c2a63">
     <title>Voter — Digital-Elect</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 
     <header class="entete">
-        <div class="marque">Digital-Elect <span>Espace électeur</span></div>
+        <a class="marque" href="vote.html">
+            <img class="marque-logo" src="images/logo.svg" alt="">
+            <span class="marque-texte">
+                <span class="marque-nom">Digital-Elect</span>
+                <span class="marque-role">Espace électeur</span>
+            </span>
+        </a>
         <div class="entete-actions">
             <div class="entete-user" id="entete-user"></div>
             <button class="btn btn-neutre btn-petit" id="btn-deconnexion">Déconnexion</button>
@@ -29,14 +37,32 @@
             <h2 style="margin-bottom:10px;">Confirmer votre vote</h2>
             <p id="modale-texte" style="color:var(--gris); margin-bottom:20px;"></p>
             <div id="modale-message"></div>
-            <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
                 <button class="btn btn-neutre" id="btn-annuler">Annuler</button>
                 <button class="btn btn-succes" id="btn-confirmer">Confirmer le vote</button>
             </div>
         </div>
     </div>
 
-    <script src="js/api.js"></script>
-    <script src="js/vote.js"></script>
+    <!-- Modale de confirmation du vote nul (bulletin blanc) -->
+    <div class="modale-fond cache" id="modale-nul">
+        <div class="modale">
+            <h2 style="margin-bottom:10px;">Voter nul ?</h2>
+            <p id="modale-nul-texte" style="color:var(--gris); margin-bottom:20px;"></p>
+            <div id="modale-nul-message"></div>
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+                <button class="btn btn-neutre" id="btn-nul-annuler">Annuler</button>
+                <button class="btn btn-danger" id="btn-nul-confirmer">Confirmer le vote nul</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="pied-page">
+        <span class="credit">Créé par MOISE</span>
+    </footer>
+
+    <script src="js/api.js?v=8"></script>
+    <script src="js/graphe.js?v=8"></script>
+    <script src="js/vote.js?v=8"></script>
 </body>
 </html>

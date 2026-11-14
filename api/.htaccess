@@ -11,7 +11,19 @@
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 </IfModule>
 
-# Interdire l'execution des .sql eventuellement presents
-<FilesMatch "\.(sql|md|ini)$">
+# Les fichiers de configuration ne doivent JAMAIS etre servis
+# directement par le web (ils contiennent les identifiants base
+# et les secrets). PHP continue de les inclure normalement.
+<FilesMatch "^(config\.php|config\.local(\.example)?\.php)$">
     Require all denied
 </FilesMatch>
+
+# Interdire l'execution des .sql eventuellement presents
+<FilesMatch "\.(sql|md|ini|log|env|example|bak|old)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    # Les reponses de l'API ne doivent jamais etre mises en cache.
+    Header set Cache-Control "no-store, max-age=0"
+</IfModule>

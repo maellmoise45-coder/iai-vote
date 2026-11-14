@@ -3,14 +3,23 @@
  * ============================================================
  *  Resultats - /api/resultats.php
  * ============================================================
- *  GET ?election_id=..
- *    - si l'election a "resultats_publics" = TRUE : acces libre
- *    - sinon : reserve aux roles admin et gestionnaire
+ *  GET ?election_id=..[&compact=1]
  *
- *  Les resultats ne s'affichent jamais automatiquement : c'est
- *  l'admin/gestionnaire qui les publie explicitement.
+ *  ACCES :
+ *   - resultats_publics = TRUE  -> acces libre ;
+ *   - admin / gestionnaire / controleur -> acces libre ;
+ *   - electeur -> uniquement pour une election EN COURS et
+ *     SEULEMENT s'il a deja vote (bulletin valide ou nul).
+ *     C'est ce qui permet le suivi du depouillement en direct
+ *     apres le vote, sans jamais reveler un choix individuel.
  *
- *  Les bulletins NULS (chrono ecoule) sont comptes a part.
+ *  Les resultats ne sont donc jamais visibles par un electeur
+ *  AVANT son vote. Les bulletins nuls (chrono ecoule) sont
+ *  comptes a part.
+ *
+ *  compact=1 : omet les photos et programmes (utilise pour le
+ *  rafraichissement automatique toutes les 5 s). Le client
+ *  complete les metadonnees via candidats.php.
  * ============================================================
  */
 require_once 'config.php';
@@ -39,20 +48,62 @@ if (!$election) {
     jsonResponse(['error' => 'Election introuvable'], 404);
 }
 
-// Controle d'acces
-if (!$election['resultats_publics']) {
-    $user = getAuthUser($pdo, false);
-    if (!$user || !in_array($user['user_role'] ?? '', ['admin', 'gestionnaire'], true)) {
-        jsonResponse([
-            'success' => false,
-            'error'   => 'Les resultats de cette election ne sont pas encore publics'
-        ], 403);
+$compact = !empty($_GET['compact']);
+$user    = getAuthUser($pdo, false);
+$role    = $user['user_role'] ?? '';
+
+/* ---------- Controle d'acces ---------- */
+$autorise = !empty($election['resultats_publics'])
+    || in_array($role, ['admin', 'gestionnaire', 'controleur'], true);
+
+if (!$autorise && $role === 'electeur' && $election['statut'] === 'en_cours') {
+    // Verifie que cet electeur a bien depose un bulletin (valide ou nul).
+    // On interroge la table votes par le hash : cela couvre aussi les
+    // bulletins anterieurs a la table emargements. Le hash ne revele
+    // jamais le choix du candidat.
+    $stmt = $pdo->prepare("SELECT matricule FROM utilisateurs WHERE id = ?");
+    $stmt->execute([(int)$user['user_id']]);
+    $matricule = (string)$stmt->fetchColumn();
+
+    if ($matricule !== '') {
+        $hash = calculerHashVote($electionId, $matricule);
+        $stmt = $pdo->prepare(
+            "SELECT 1 FROM votes WHERE election_id = ? AND hash_vote = ? LIMIT 1"
+        );
+        $stmt->execute([$electionId, $hash]);
+        $autorise = $stmt->fetch() !== false;
+    }
+
+    // Compatibilite : emargement present mais bulletin purge.
+    if (!$autorise) {
+        $stmt = $pdo->prepare(
+            "SELECT 1 FROM emargements WHERE utilisateur_id = ? AND election_id = ? LIMIT 1"
+        );
+        $stmt->execute([(int)$user['user_id'], $electionId]);
+        $autorise = $stmt->fetch() !== false;
     }
 }
 
-// Candidats + voix + pourcentage
+if (!$autorise) {
+    if ($role === 'electeur') {
+        jsonResponse([
+            'success' => false,
+            'error'   => 'Votez d\'abord pour suivre les resultats en direct de ce scrutin.'
+        ], 403);
+    }
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Les resultats de cette election ne sont pas encore publics'
+    ], 403);
+}
+
+/* ---------- Candidats + voix + pourcentage ---------- */
+$colonnes = $compact
+    ? 'id, nom, prenom, nombre_voix'
+    : 'id, nom, prenom, programme, photo_url, nombre_voix';
+
 $stmt = $pdo->prepare(
-    "SELECT id, nom, prenom, programme, photo_url, nombre_voix
+    "SELECT $colonnes
      FROM candidats WHERE election_id = ? ORDER BY nombre_voix DESC, nom"
 );
 $stmt->execute([$electionId]);
@@ -77,6 +128,7 @@ $inscrits   = (int)$pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = '
 
 jsonResponse([
     'success' => true,
+    'compact' => $compact,
     'election' => [
         'id'                => (int)$election['id'],
         'titre'             => $election['titre'],

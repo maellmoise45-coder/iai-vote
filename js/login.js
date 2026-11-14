@@ -54,7 +54,5 @@ form.addEventListener('submit', async (e) => {
     API.setSession(data.token, data.user);
 
     afficherMessage('message', 'Connexion réussie ! Redirection…', 'succes');
-    setTimeout(() => {
-        location.href = data.user.role === 'electeur' ? 'vote.html' : 'dashboard.html';
-    }, 500);
+    setTimeout(() => redirigerSelonRole(), 500);
 });

@@ -3,15 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0c2a63">
     <title>Connexion — Digital-Elect</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body class="page-connexion">
 
     <div class="carte-connexion">
         <div class="logo-entete">
-            <div class="logo-titre">Digital-Elect</div>
-            <div class="logo-sous">Plateforme de vote électronique</div>
+            <img class="logo-image" src="images/logo.svg" alt="Logo Digital-Elect">
+            <div>
+                <div class="logo-titre">Digital-<span class="accent">Elect</span></div>
+                <div class="logo-sous">Plateforme de vote électronique</div>
+            </div>
+            <span class="logo-badge">Scrutin sécurisé</span>
         </div>
 
         <div id="message"></div>
@@ -34,12 +40,16 @@
             </button>
         </form>
 
-        <p style="text-align:center; margin-top:20px; font-size:13px; color:var(--gris);">
+        <p class="lien-secondaire">
             <a href="resultats.html">Consulter les résultats publics</a>
         </p>
     </div>
 
-    <script src="js/api.js"></script>
-    <script src="js/login.js"></script>
+    <footer class="pied-page">
+        <span class="credit">Créé par MOISE</span>
+    </footer>
+
+    <script src="js/api.js?v=8"></script>
+    <script src="js/login.js?v=8"></script>
 </body>
 </html>

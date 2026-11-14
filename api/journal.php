@@ -3,7 +3,7 @@
  * ============================================================
  *  Journal d'audit - /api/journal.php
  * ============================================================
- *  GET ?limite=100   dernieres actions (admin)
+ *  GET ?limite=100   dernieres actions (admin / controleur)
  * ============================================================
  */
 require_once 'config.php';
@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $user = getAuthUser($pdo);
-exigerRole($user, ['admin']);
+exigerRole($user, ['admin', 'controleur']);
 
 $limite = min(500, max(1, (int)($_GET['limite'] ?? 100)));
 

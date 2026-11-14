@@ -15,6 +15,12 @@ Options -Indexes
     Header set X-Frame-Options "DENY"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
     Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+    # Isole l'origine (pas de partage de ressources avec d'autres sites)
+    Header set Cross-Origin-Opener-Policy "same-origin"
+    Header set Cross-Origin-Resource-Policy "same-origin"
+    Header set X-Permitted-Cross-Domain-Policies "none"
+    # HSTS : actif uniquement lorsque le site est servi en HTTPS
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
     # Content-Security-Policy :
     #   - scripts uniquement depuis le site (pas de <script> inline)
@@ -25,6 +31,11 @@ Options -Indexes
 </IfModule>
 
 # Interdire l'accès direct aux fichiers sensibles
-<FilesMatch "\.(sql|md|env|example|ini|log|sh|ya?ml)$">
+<FilesMatch "\.(sql|md|env|example|ini|log|sh|ya?ml|bak|old|local\.php)$">
+    Require all denied
+</FilesMatch>
+
+# Fichiers de configuration locaux (secrets) : refus explicite
+<FilesMatch "^(config\.local\.php|\.env)$">
     Require all denied
 </FilesMatch>

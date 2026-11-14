@@ -38,7 +38,7 @@ switch ($method) {
         if (($_GET['action'] ?? '') === 'me') {
             $user = getAuthUser($pdo);
             $stmt = $pdo->prepare(
-                "SELECT id, matricule, nom, prenom, email, role, a_vote FROM utilisateurs WHERE id = ?"
+                "SELECT id, matricule, nom, prenom, email, role, zone, a_vote FROM utilisateurs WHERE id = ?"
             );
             $stmt->execute([$user['user_id']]);
             jsonResponse(['success' => true, 'user' => $stmt->fetch()]);
@@ -62,11 +62,20 @@ function handleLogin($pdo, $data) {
         jsonResponse(['error' => 'Matricule et mot de passe requis'], 400);
     }
 
+    // Limitation : 10 echecs maxi par IP + matricule sur 15 minutes.
+    if (connexionTropDeTentatives($pdo, $matricule)) {
+        header('Retry-After: 900');
+        jsonResponse([
+            'error' => 'Trop de tentatives de connexion. Reessayez dans 15 minutes.'
+        ], 429);
+    }
+
     $stmt = $pdo->prepare("SELECT * FROM utilisateurs WHERE matricule = ?");
     $stmt->execute([$matricule]);
     $user = $stmt->fetch();
 
     if (!$user || !password_verify($password, $user['mot_de_passe'])) {
+        journaliser($pdo, $matricule, 'connexion_echouee');
         // Message volontairement generique (pas d'indication sur le champ fautif)
         jsonResponse(['error' => 'Matricule ou mot de passe incorrect'], 401);
     }
@@ -76,6 +85,9 @@ function handleLogin($pdo, $data) {
     }
 
     $token = generateToken($user['id'], $user['role']);
+
+    // Connexion reussie : on remet le compteur de tentatives a zero.
+    reinitialiserTentatives($pdo, $matricule);
 
     // Purger les sessions expirees
     $pdo->prepare("DELETE FROM sessions WHERE expire_at < NOW()")->execute();
@@ -103,6 +115,7 @@ function handleLogin($pdo, $data) {
             'prenom'    => $user['prenom'],
             'email'     => $user['email'],
             'role'      => $user['role'],
+            'zone'      => $user['zone'],
             'a_vote'    => (bool)$user['a_vote'],
         ]
     ]);
@@ -146,7 +159,15 @@ function handleChangePassword($pdo, $data) {
     $pdo->prepare("UPDATE utilisateurs SET mot_de_passe = ? WHERE id = ?")
         ->execute([$hash, $user['user_id']]);
 
+    // Toutes les sessions du compte sont invalidees : l'utilisateur
+    // devra se reconnecter avec son nouveau mot de passe.
+    $pdo->prepare("DELETE FROM sessions WHERE utilisateur_id = ?")->execute([$user['user_id']]);
+
     journaliser($pdo, $row['matricule'], 'changement_mot_de_passe');
 
-    jsonResponse(['success' => true, 'message' => 'Mot de passe modifie avec succes']);
+    jsonResponse([
+        'success'    => true,
+        'reconnecter' => true,
+        'message'    => 'Mot de passe modifie. Reconnectez-vous avec le nouveau mot de passe.'
+    ]);
 }

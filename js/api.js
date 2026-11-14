@@ -97,14 +97,14 @@ function echapper(texte) {
 function formaterDate(valeur) {
     if (!valeur) return '—';
     const d = new Date(valeur);
-    if (isNaN(d)) return valeur;
+    if (isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function formaterDateHeure(valeur) {
     if (!valeur) return '—';
     const d = new Date(valeur);
-    if (isNaN(d)) return valeur;
+    if (isNaN(d.getTime())) return '—';
     return d.toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -131,7 +131,9 @@ function badgeStatut(statut) {
 function redirigerSelonRole() {
     const user = API.getUser();
     if (!user) { location.href = 'index.html'; return; }
-    location.href = user.role === 'electeur' ? 'vote.html' : 'dashboard.html';
+    if (user.role === 'electeur') location.href = 'vote.html';
+    else if (user.role === 'controleur') location.href = 'controle.html';
+    else location.href = 'dashboard.html';
 }
 
 /** Protège une page : redirige si non connecté ou rôle non autorisé. */

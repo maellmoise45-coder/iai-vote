@@ -1,14 +1,14 @@
-# Guide de déploiement — Digital-Elect
+# Guide de déploiement — Digital-Elect V1.2 (alternative Render)
 
-> ⚠️ **Note (octobre 2026) :** Render **exige désormais une carte bancaire**,
-> même pour la base PostgreSQL gratuite. L'application a donc été déployée sur
-> **alwaysdata** (gratuit, sans carte) :
+> ⚠️ **Note (2026) :** Render **exige une carte bancaire**, même pour la base
+> PostgreSQL gratuite. L'application est donc déployée sur **alwaysdata**
+> (gratuit, sans carte) :
 > 👉 **https://digitalelect.alwaysdata.net** — voir **[GUIDE-ALWAYSDATA.md](GUIDE-ALWAYSDATA.md)**.
 >
 > Ce document décrit la **méthode Render** (conservée comme alternative).
 
-Ce guide met l'application en ligne sur **Render.com** (gratuit), avec une base
-**PostgreSQL** créée automatiquement.
+Ce guide met l'application en ligne sur **Render.com**, avec une base
+**PostgreSQL** externe (Neon ou équivalent).
 
 ---
 
@@ -17,11 +17,11 @@ Ce guide met l'application en ligne sur **Render.com** (gratuit), avec une base
 | Élément | Pourquoi | Coût |
 |---|---|---|
 | Un compte **GitHub** | héberger le code | gratuit |
-| Un compte **Render** | héberger l'app + la base | gratuit |
+| Un compte **Render** | héberger l'app | gratuit (carte requise) |
+| Une base **PostgreSQL** | stocker les données | selon le fournisseur |
 
-> Remarque : **Git n'est pas installé** sur cette machine. Ce n'est pas
-> bloquant : utilisez l'**Option A (GitHub Desktop)** ou l'**Option B (upload
-> web)** ci-dessous.
+> Remarque : si **Git n'est pas installé** sur votre machine, utilisez
+> **GitHub Desktop** ou l'upload web (Option B ci-dessous).
 
 ---
 
@@ -32,19 +32,19 @@ Ce guide met l'application en ligne sur **Render.com** (gratuit), avec une base
 1. Téléchargez **GitHub Desktop** : https://desktop.github.com
 2. Installez-le et connectez-vous avec votre compte GitHub.
 3. Menu **File → Add local repository…** puis choisissez le dossier
-   `iai-vote` (celui de `Documents`, pas celui de XAMPP).
+   `Digital-Elect.V1.2` (celui de `Documents`, pas celui de XAMPP).
    - S'il propose de créer un dépôt : acceptez (**create a repository**).
-4. Cliquez **Publish repository**, décochez « Keep this code private » si vous
-   voulez le rendre public, puis **Publish**.
+4. Cliquez **Publish repository**, choisissez la visibilité, puis **Publish**.
 
 ### Option B — Upload web (sans rien installer)
 
-1. Sur https://github.com → **New repository** → nom : `iai-vote` → **Create**.
+1. Sur https://github.com → **New repository** → nom : `digital-elect` → **Create**.
 2. Sur la page du dépôt : **Add file → Upload files**.
-3. Glissez **le contenu** du dossier `iai-vote` (et non le dossier lui-même),
-   puis **Commit changes**.
+3. Glissez **le contenu** du dossier (et non le dossier lui-même), puis
+   **Commit changes**.
 
-> ⚠️ Le fichier `render.yaml` **doit être à la racine** du dépôt.
+> ⚠️ `render.yaml` **doit être à la racine** du dépôt.
+> ⚠️ Ne committez **jamais** `api/config.local.php` ni `.env`.
 
 ---
 
@@ -52,44 +52,62 @@ Ce guide met l'application en ligne sur **Render.com** (gratuit), avec une base
 
 1. Sur https://render.com → créez un compte (**Sign up with GitHub**).
 2. Tableau de bord → **New +** → **Blueprint**.
-3. Sélectionnez votre dépôt `iai-vote` → **Connect**.
-4. Render lit `render.yaml` et propose de créer :
-   - un **service web** (Docker) ;
-   - une **base PostgreSQL** `iai-vote-db`.
-   Cliquez **Apply**.
+3. Sélectionnez votre dépôt → **Connect**.
+4. Render lit `render.yaml` et crée un **service web** (Docker).
+   Il génère automatiquement :
+   - `APP_SECRET` (jetons + hash anonyme des votes) ;
+   - `INSTALL_TOKEN` (protection de `install.php`).
+5. Renseignez `DATABASE_URL` avec l'adresse de votre base PostgreSQL externe
+   (ex. Neon), puis **Apply**.
 
-Le build prend ~5–10 minutes. Render génère tout seul :
-- `APP_SECRET` (secret des jetons + hash anonyme) ;
-- `DATABASE_URL` (connexion à la base).
+Le build prend ~5–10 minutes.
 
 ---
 
 ## Étape 3 — Initialiser la base (une seule fois)
 
-Quand le service est « **Live** », ouvrez :
+1. Dans Render → **Environment**, copiez la valeur de `INSTALL_TOKEN`.
+2. Appelez le script avec le jeton :
 
-```
-https://<votre-service>.onrender.com/api/install.php
+   ```bash
+   curl -H "X-Install-Token: VALEUR_DU_JETON" \
+        https://<votre-service>.onrender.com/api/install.php
+   ```
+
+   Réponse attendue : `SUCCES : base initialisee.`
+
+3. Ouvrez l'application :
+
+   ```
+   https://<votre-service>.onrender.com/
+   ```
+
+### Base existante (V1 → V2 → V3 → V4)
+
+N'utilisez pas `install.php` sur une base déjà peuplée. Appliquez les migrations :
+
+```bash
+psql "$DATABASE_URL" -f database/migration_v2.sql
+psql "$DATABASE_URL" -f database/migration_v3_securite.sql
+psql "$DATABASE_URL" -f database/migration_v4_invitations.sql
 ```
 
-Vous devez voir : `SUCCES : base initialisee.`
-
-Ensuite, ouvrez l'application :
-
-```
-https://<votre-service>.onrender.com/
-```
+- **V2** : rôle `controleur`, colonne `zone`, table `emargements` ;
+- **V3** : index `idx_journal_tentatives` (limitation des tentatives) ;
+- **V4** : table `invitations` (liens d'inscription par classe) et colonne
+  `auto_inscrit`.
 
 ---
 
 ## Étape 4 — Sécuriser (OBLIGATOIRE)
 
-1. **Changez le mot de passe admin** (`admin` / `1234Zeus`) :
-   connectez-vous au tableau de bord, puis cliquez sur le bouton
-   **« Mon mot de passe »** en haut à droite.
+1. **Changez les mots de passe** (`admin` / `1234Zeus`, `gestionnaire`,
+   `controleur`) via **« Mon mot de passe »**.
 2. **Supprimez `api/install.php`** du dépôt GitHub (Add file → Delete) —
-   sinon n'importe qui peut relancer l'installation.
-3. Créez vos **vrais comptes électeurs** depuis le tableau de bord.
+   sinon l'installation reste exposée.
+3. Retirez `INSTALL_TOKEN` de l'environnement Render.
+4. Créez vos **vrais comptes électeurs** depuis le tableau de bord.
+5. Vérifiez que `https://…/api/config.php` renvoie bien `403`.
 
 ---
 
@@ -100,7 +118,7 @@ https://<votre-service>.onrender.com/
 | Créer le compte GitHub + envoyer le code | 5–10 min |
 | Créer le compte Render + Blueprint | ~5 min |
 | Build + déploiement automatique | 5–10 min |
-| `install.php` + personnalisation | ~5 min |
+| `install.php` protégé + personnalisation | ~5 min |
 | **Total** | **~20–30 min** |
 
 ---
@@ -109,8 +127,8 @@ https://<votre-service>.onrender.com/
 
 - Le service **se met en veille** après ~15 min d'inactivité ; le premier
   chargement suivant prend ~30 s.
-- La **base gratuite** est **limitée dans le temps** (Render l'expire après une
-  période donnée). Pour un usage durable, prévoyez une offre payante.
+- La **base gratuite** Render n'existe plus : utilisez une base externe
+  (Neon, Supabase…) et renseignez `DATABASE_URL`.
 - HTTPS est fourni automatiquement.
 
 ---
@@ -119,18 +137,25 @@ https://<votre-service>.onrender.com/
 
 - **Photos des candidats** : enregistrées dans la base (colonne `photo_url`,
   type `TEXT`) sous forme d'image compressée. Elles **survivent** aux
-  redéploiements et à la mise en veille du service.
+  redéploiements et à la mise en veille.
 - **Chrono de vote** : 1 minute, vérifié **côté serveur** (table `ouvertures`).
   Passé le délai, le bulletin devient **nul** et l'électeur est déconnecté.
   Durée modifiable dans `api/config.php` (`DUREE_VOTE`, en secondes).
 - **Résultats** : jamais automatiques. Après la clôture (auto à la date de fin,
   ou manuelle avec mot de passe admin), cliquez **Résultats → Publier**.
+- **Liens de classe** : le délégué génère un lien depuis l'onglet **Ma classe**.
+  Il impose la zone de la classe ; un seul lien actif à la fois (validité
+  90 jours). Les comptes créés sont marqués `auto_inscrit`.
+- **Diagramme en bandes** : affichage CSS/JS pur (`js/graphe.js`), pourcentages
+  calculés sur les votants ; direct toutes les 5 s après le vote.
 - **Sécurité** : `.htaccess` (en-têtes + CSP) est copié dans l'image Docker ;
   le `Dockerfile` active déjà `AllowOverride All` et le module `headers`.
+- **Secrets** : `api/config.local.php` est exclu de l'image Docker
+  (`.dockerignore`) ; en production Docker/Render, utilisez les variables
+  d'environnement.
 - **Base locale** : PostgreSQL portable dans `C:\xampp\pgsql`, base `iai_vote`
   (voir `demarrer-postgres.bat` / `arreter-postgres.bat`).
-- **Ne committez jamais** de fichier `.env` (secrets) — déjà exclu par
-  `.gitignore` et `.dockerignore`.
+- **Ne committez jamais** de fichier `.env` ni `api/config.local.php`.
 
 ---
 
@@ -138,7 +163,13 @@ https://<votre-service>.onrender.com/
 
 | Problème | Piste |
 |---|---|
-| `install.php` → erreur de connexion | La base Render n'est pas encore prête ; attendez 1–2 min et rechargez. |
+| `install.php` → `403 Acces refuse` | `INSTALL_TOKEN` absent de l'environnement, ou en-tête `X-Install-Token` incorrect. |
+| `install.php` → erreur de connexion | La base n'est pas encore prête ou `DATABASE_URL` est incorrecte ; attendez 1–2 min et rechargez. |
 | Page blanche / 500 | Consultez les **Logs** du service sur Render. |
 | « Aucune élection ouverte » | Dans le tableau de bord, ouvrez le scrutin (bouton **Ouvrir**). |
-| Rôle administrateur perdu | Vérifiez dans la base : `SELECT role FROM utilisateurs WHERE matricule='admin';` |
+| Rôle administrateur perdu | Vérifiez : `SELECT role FROM utilisateurs WHERE matricule='admin';` |
+| Résultats invisibles | Ils doivent être publiés : **Résultats → Publier** après la clôture. |
+
+---
+
+Créé par **MOISE**.

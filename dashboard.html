@@ -3,13 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0c2a63">
     <title>Tableau de bord — Digital-Elect</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 
     <header class="entete">
-        <div class="marque">Digital-Elect <span>Administration</span></div>
+        <a class="marque" href="dashboard.html">
+            <img class="marque-logo" src="images/logo.svg" alt="">
+            <span class="marque-texte">
+                <span class="marque-nom">Digital-Elect</span>
+                <span class="marque-role">Administration</span>
+            </span>
+        </a>
         <div class="entete-actions">
             <div class="entete-user" id="entete-user"></div>
             <button class="btn btn-neutre btn-petit" id="btn-mon-mot-de-passe">Mon mot de passe</button>
@@ -25,9 +33,12 @@
 
         <!-- Onglets -->
         <div class="onglets" id="onglets">
-            <button class="onglet actif" data-vue="elections">Élections</button>
+            <button class="onglet actif" data-vue="elections" id="onglet-elections">Élections</button>
             <button class="onglet" data-vue="electeurs">Électeurs</button>
             <button class="onglet" data-vue="gestionnaires" id="onglet-gestionnaires">Gestionnaires</button>
+            <button class="onglet" data-vue="controleurs" id="onglet-controleurs">Contrôleurs</button>
+            <button class="onglet" data-vue="invitation" id="onglet-invitation">Liens de classe</button>
+            <button class="onglet" data-vue="suivi" id="onglet-suivi">Suivi live</button>
             <button class="onglet" data-vue="journal" id="onglet-journal">Journal</button>
         </div>
 
@@ -43,7 +54,13 @@
         </div>
     </div>
 
-    <script src="js/api.js"></script>
-    <script src="js/dashboard.js"></script>
+    <footer class="pied-page">
+        <span class="credit">Créé par MOISE</span>
+    </footer>
+
+    <script src="js/api.js?v=8"></script>
+    <script src="js/graphe.js?v=8"></script>
+    <script src="js/suivi.js?v=8"></script>
+    <script src="js/dashboard.js?v=8"></script>
 </body>
 </html>

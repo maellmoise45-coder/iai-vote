@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0c2a63">
+    <title>Inscription — Digital-Elect</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/style.css?v=8">
+</head>
+<body class="page-connexion page-inscription">
+
+    <div class="carte-connexion">
+        <div class="logo-entete">
+            <img class="logo-image" src="images/logo.svg" alt="Logo Digital-Elect">
+            <div>
+                <div class="logo-titre">Digital-<span class="accent">Elect</span></div>
+                <div class="logo-sous">Inscription par lien de classe</div>
+            </div>
+            <span class="logo-badge">Lien sécurisé</span>
+        </div>
+
+        <div id="message"></div>
+
+        <div id="chargement">
+            <p class="vide">Vérification du lien d'inscription…</p>
+        </div>
+
+        <div id="zone-invalide" class="cache">
+            <div class="alerte alerte-erreur" id="erreur-lien">
+                Ce lien d'inscription est invalide ou a expiré.
+            </div>
+            <a class="btn btn-primaire btn-bloc" href="index.html">Retour à la connexion</a>
+        </div>
+
+        <form id="form-inscription" class="cache" autocomplete="off">
+            <div class="champ">
+                <label>Classe (imposée par le lien)</label>
+                <div class="zone-verrouillee">
+                    <span class="cadenas" aria-hidden="true">🔒</span>
+                    <div>
+                        <span id="zone-classe">…</span>
+                        <small>Cette classe ne peut pas être modifiée.</small>
+                    </div>
+                </div>
+            </div>
+
+            <p id="info-delegue" class="aide"></p>
+
+            <div class="champ">
+                <label for="prenom">Prénom</label>
+                <input type="text" id="prenom" name="prenom" required maxlength="100"
+                       autocomplete="given-name" placeholder="Votre prénom">
+            </div>
+
+            <div class="champ">
+                <label for="nom">Nom</label>
+                <input type="text" id="nom" name="nom" required maxlength="100"
+                       autocomplete="family-name" placeholder="Votre nom">
+            </div>
+
+            <div class="champ">
+                <label for="matricule">Matricule</label>
+                <input type="text" id="matricule" name="matricule" required maxlength="50"
+                       autocomplete="username" placeholder="ex : ETU22A001">
+            </div>
+
+            <div class="champ">
+                <label for="email">Email <span style="font-weight:600; color:var(--gris)">(facultatif)</span></label>
+                <input type="email" id="email" name="email" maxlength="150"
+                       autocomplete="email" placeholder="vous@exemple.com">
+            </div>
+
+            <div class="champ">
+                <label for="mot_de_passe">Mot de passe</label>
+                <input type="password" id="mot_de_passe" name="mot_de_passe" required minlength="6"
+                       autocomplete="new-password" placeholder="min. 6 caractères">
+            </div>
+
+            <div class="champ">
+                <label for="confirmation">Confirmer le mot de passe</label>
+                <input type="password" id="confirmation" name="confirmation" required minlength="6"
+                       autocomplete="new-password" placeholder="Répétez le mot de passe">
+            </div>
+
+            <button type="submit" class="btn btn-primaire btn-bloc" id="btn-inscription">
+                M'inscrire dans cette classe
+            </button>
+        </form>
+
+        <p class="lien-secondaire">
+            Déjà inscrit ? <a href="index.html">Se connecter</a>
+        </p>
+    </div>
+
+    <footer class="pied-page">
+        <span class="credit">Créé par MOISE</span>
+    </footer>
+
+    <script src="js/api.js?v=8"></script>
+    <script src="js/inscription.js?v=8"></script>
+</body>
+</html>

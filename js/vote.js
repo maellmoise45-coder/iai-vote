@@ -5,16 +5,26 @@
    SERVEUR (table ouvertures) : recharger la page ne remet pas
    le compteur à zéro. À l'expiration, le bulletin est déclaré
    NUL et l'électeur est déconnecté (expulsé).
+
+   APRÈS LE VOTE : l'électeur voit les résultats en direct
+   (diagramme à bandes) tant que le scrutin est en cours.
+   Aucun choix individuel n'est exposé : uniquement les agrégats.
+
+   VOTE NUL : l'électeur peut choisir de déposer un bulletin
+   blanc (bouton dédié + confirmation). Il est comptabilisé
+   comme vote nul, sans donner de voix à un candidat.
    ============================================================ */
 
 const user = protegerPage(['electeur']);
 let electionCourante = null;
 let candidatChoisi = null;
+let electionNul = null;
 
 const DUREE_VOTE = 60;      // valeur par défaut si le serveur ne répond pas
 const chronoExpire = {};    // electionId -> true quand le temps est écoulé
 let minuteries = [];        // intervalles du chrono en cours
 let expulsionEnCours = false;
+let liveMinuteries = [];    // intervalles du suivi en direct après vote
 
 if (user) {
     document.getElementById('entete-user').innerHTML =
@@ -34,6 +44,9 @@ async function expulser(electionId) {
 
     minuteries.forEach(clearInterval);
     minuteries = [];
+    arreterSuiviLive();
+    fermerModale();
+    fermerModaleNul();
 
     try {
         await API.post('votes.php', { action: 'expirer', election_id: electionId });
@@ -44,10 +57,17 @@ async function expulser(electionId) {
     location.href = 'index.html';
 }
 
+function arreterSuiviLive() {
+    liveMinuteries.forEach(clearInterval);
+    liveMinuteries = [];
+}
+
 /* ---------- Chargement des élections ouvertes ---------- */
 async function chargerElections() {
     const zone = document.getElementById('zone-contenu');
     const { ok, data } = await API.get('elections.php');
+
+    arreterSuiviLive();
 
     if (!ok || !data.success) {
         zone.innerHTML = `<p class="vide">${echapper(data.error || 'Impossible de charger les élections.')}</p>`;
@@ -91,7 +111,8 @@ async function afficherElection(zone, election) {
         if (etat.nul) {
             carte.innerHTML += `
                 <div class="alerte alerte-erreur">
-                    ⊘ Votre bulletin pour cette élection a été déclaré <b>NUL</b> (temps de vote écoulé).
+                    ⊘ Votre bulletin pour cette élection est <b>NUL</b>
+                    (vote blanc ou temps de vote écoulé).
                     Votre vote est déjà enregistré et ne peut pas être repris.
                 </div>`;
         } else {
@@ -101,6 +122,18 @@ async function afficherElection(zone, election) {
                     Votre bulletin est enregistré de façon anonyme.
                 </div>`;
         }
+
+        // Suivi en direct : uniquement après avoir voté, et pendant le scrutin.
+        if (election.statut === 'en_cours' || election.resultats_publics) {
+            const live = document.createElement('div');
+            live.className = 'zone-live';
+            live.innerHTML = '<p class="vide">Chargement des résultats en direct…</p>';
+            carte.appendChild(live);
+            demarrerResultatsLive(election, live);
+        } else {
+            carte.innerHTML += `<p class="aide">Le scrutin est terminé. Les résultats seront publiés par l'administration.</p>`;
+        }
+
         zone.appendChild(carte);
         return;
     }
@@ -133,8 +166,96 @@ async function afficherElection(zone, election) {
     });
 
     carte.appendChild(grille);
+
+    // Bulletin blanc : un vote nul volontaire, avec confirmation.
+    const zoneNul = document.createElement('div');
+    zoneNul.className = 'vote-nul-zone';
+    zoneNul.innerHTML = `
+        <button type="button" class="btn btn-neutre btn-vote-nul">⊘ Voter nul (bulletin blanc)</button>
+        <p class="vote-nul-aide">Le bulletin blanc est enregistré comme <b>vote nul</b> :
+        il compte dans la participation mais ne donne aucune voix à un candidat.</p>`;
+    zoneNul.querySelector('.btn-vote-nul')
+        .addEventListener('click', () => ouvrirModaleNul(election));
+    carte.appendChild(zoneNul);
+
     demarrerChrono(election, carte, grille, etat.secondes_restantes);
     zone.appendChild(carte);
+}
+
+/* ---------- Résultats en direct après le vote ---------- */
+function demarrerResultatsLive(election, zone) {
+    let meta = new Map();
+    let actif = true;
+
+    async function chargerMeta() {
+        const { data } = await API.get('candidats.php?election_id=' + election.id);
+        if (data && data.success) {
+            meta = new Map((data.data || []).map(c => [Number(c.id), c]));
+        }
+    }
+
+    async function rafraichir() {
+        if (!actif || !zone.isConnected) return;
+
+        const { ok, data } = await API.get(
+            `resultats.php?election_id=${election.id}&compact=1`
+        );
+        if (!actif || !zone.isConnected) return;
+
+        if (!ok || !data.success) {
+            zone.innerHTML = `<div class="alerte alerte-info">
+                ${echapper(data.error || 'Résultats en direct indisponibles.')}
+            </div>`;
+            return;
+        }
+
+        // Le mode compact omet les photos : on les complète avec les
+        // métadonnées chargées une seule fois.
+        const candidats = (data.candidats || []).map(c => {
+            const m = meta.get(Number(c.id)) || {};
+            return {
+                ...c,
+                photo_url: m.photo_url || null,
+                programme: m.programme || '',
+            };
+        });
+
+        const heure = new Date().toLocaleTimeString('fr-FR', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+        });
+        const nuls = Number(data.votes_nuls || 0);
+
+        zone.innerHTML = `
+            <div class="live-bandeau">
+                <span><span class="live-point"></span>
+                    <b>Résultats en direct</b> — actualisation toutes les 5 s</span>
+                <span>↻ ${heure}</span>
+            </div>
+            ${Graphe.rendre(candidats, {
+                votants: data.total_votes || 0,
+                nuls: nuls > 0 ? nuls : null,
+                note: `${data.votes_valides || 0} bulletin(s) valide(s) sur ${data.total_votes || 0} vote(s) exprimé(s) — pourcentages calculés sur les votants.`,
+            })}
+            ${nuls > 0 ? `<div class="nuls-bloc">⊘ ${nuls} bulletin(s) nul(s) — bulletins blancs et temps de vote écoulé.</div>` : ''}
+        `;
+    }
+
+    (async () => {
+        await chargerMeta();
+        await rafraichir();
+        if (!actif) return;
+        const minuterie = setInterval(rafraichir, 5000);
+        liveMinuteries.push(minuterie);
+    })();
+
+    // Arrêt propre si la carte est retirée du document.
+    const observateur = new MutationObserver(() => {
+        if (!zone.isConnected) {
+            actif = false;
+            observateur.disconnect();
+        }
+    });
+    observateur.observe(document.body, { childList: true, subtree: true });
 }
 
 /* ---------- Chrono de vote (temps restant fourni par le serveur) ---------- */
@@ -165,7 +286,9 @@ function demarrerChrono(election, carte, grille, secondesRestantes) {
             chrono.classList.add('chrono-expire');
             chrono.innerHTML = '⏱️ Temps écoulé — bulletin nul, déconnexion…';
             grille.querySelectorAll('.candidat').forEach(el => el.classList.add('desactive'));
+            carte.querySelectorAll('.btn-vote-nul').forEach(b => b.disabled = true);
             fermerModale();
+            fermerModaleNul();
             expulser(election.id);
         } else {
             afficherRestant();
@@ -201,6 +324,70 @@ function fermerModale() {
 }
 
 document.getElementById('btn-annuler').addEventListener('click', fermerModale);
+
+/* ---------- Vote nul volontaire (bulletin blanc) ---------- */
+function ouvrirModaleNul(election) {
+    if (chronoExpire[election.id]) {
+        afficherMessage('message', '⏱️ Le temps de vote est écoulé pour cette élection.', 'erreur');
+        return;
+    }
+
+    electionNul = election;
+    document.getElementById('modale-nul-texte').textContent =
+        `Vous allez déposer un bulletin blanc à l'élection « ${election.titre} ». `
+        + 'Il sera comptabilisé comme vote nul et ne donnera aucune voix à un candidat. '
+        + 'Cette action est définitive.';
+    masquerMessage('modale-nul-message');
+    document.getElementById('modale-nul').classList.remove('cache');
+}
+
+function fermerModaleNul() {
+    document.getElementById('modale-nul').classList.add('cache');
+    electionNul = null;
+}
+
+document.getElementById('btn-nul-annuler').addEventListener('click', fermerModaleNul);
+
+document.getElementById('btn-nul-confirmer').addEventListener('click', async () => {
+    if (!electionNul) return;
+
+    if (chronoExpire[electionNul.id]) {
+        afficherMessage('modale-nul-message', '⏱️ Le temps de vote est écoulé.');
+        fermerModaleNul();
+        return;
+    }
+
+    const btn = document.getElementById('btn-nul-confirmer');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement…';
+
+    const { ok, data } = await API.post('votes.php', {
+        election_id: electionNul.id,
+        vote_nul: true,
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Confirmer le vote nul';
+
+    if (!ok || !data.success) {
+        afficherMessage('modale-nul-message', data.error || 'Erreur lors du vote.');
+        return;
+    }
+
+    // Chrono dépassé côté serveur : le serveur impose un nul + déconnexion.
+    if (data.nul && !data.volontaire) {
+        fermerModaleNul();
+        afficherMessage('message', '⏱️ ' + (data.message || 'Temps écoulé : bulletin nul.'), 'erreur');
+        API.clearSession();
+        sessionStorage.setItem('iai_expire', '1');
+        setTimeout(() => location.href = 'index.html', 1500);
+        return;
+    }
+
+    fermerModaleNul();
+    afficherMessage('message', '✅ ' + (data.message || 'Votre vote nul a bien été enregistré.'), 'succes');
+    chargerElections();
+});
 
 document.getElementById('btn-confirmer').addEventListener('click', async () => {
     if (!candidatChoisi || !electionCourante) return;
@@ -239,7 +426,7 @@ document.getElementById('btn-confirmer').addEventListener('click', async () => {
     }
 
     fermerModale();
-    afficherMessage('message', '✅ Votre vote a bien été enregistré.', 'succes');
+    afficherMessage('message', '✅ Votre vote a bien été enregistré. Voici les résultats en direct.', 'succes');
     chargerElections();
 });
 
