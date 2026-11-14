@@ -12,6 +12,11 @@ bulletins sont **anonymes**.
 > (auto-inscription des étudiants) et le **diagramme à bandes** avec résultats
 > en direct après le vote.
 
+## Liens
+
+- Application en ligne : <https://digitalelect.alwaysdata.net>
+- Dépôt GitHub : <https://github.com/maellmoise45-coder/iai-vote>
+
 ## Stack technique
 
 | Couche    | Technologie                              |

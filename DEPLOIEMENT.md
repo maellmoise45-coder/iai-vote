@@ -38,7 +38,8 @@ Ce guide met l'application en ligne sur **Render.com**, avec une base
 
 ### Option B — Upload web (sans rien installer)
 
-1. Sur https://github.com → **New repository** → nom : `digital-elect` → **Create**.
+1. Sur https://github.com → **New repository** → nom : `iai-vote` → **Create**.
+   (Le dépôt existant est <https://github.com/maellmoise45-coder/iai-vote>.)
 2. Sur la page du dépôt : **Add file → Upload files**.
 3. Glissez **le contenu** du dossier (et non le dossier lui-même), puis
    **Commit changes**.
