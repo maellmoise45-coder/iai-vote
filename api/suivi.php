@@ -30,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 $user = getAuthUser($pdo);
 exigerRole($user, ['admin', 'controleur']);
+$estAdmin = (($user['user_role'] ?? '') === 'admin');
 
 // compact=1 : omet les photos et programmes. Le front garde ces
 // metadonnees en cache et ne redemande que les compteurs a chaque
@@ -41,9 +42,13 @@ $compact = !empty($_GET['compact']);
 cloturerElectionsEchues($pdo);
 
 // Liste des elections pour le selecteur (en cours en premier).
+// Un controleur ne voit pas les elections de classe : elles sont
+// reservees au delegue et aux etudiants de la classe.
+$filtreListe = $estAdmin ? '' : "WHERE TRIM(COALESCE(zone, '')) = ''";
 $elections = $pdo->query(
-    "SELECT id, titre, statut, date_debut, date_fin
+    "SELECT id, titre, statut, date_debut, date_fin, zone
      FROM elections
+     $filtreListe
      ORDER BY (statut = 'en_cours') DESC, cree_le DESC"
 )->fetchAll();
 
@@ -68,7 +73,7 @@ if (!$electionId) {
 sweepVotesNuls($pdo, $electionId);
 
 $stmt = $pdo->prepare(
-    "SELECT id, titre, description, statut, date_debut, date_fin, resultats_publics
+    "SELECT id, titre, description, statut, date_debut, date_fin, resultats_publics, zone
      FROM elections WHERE id = ?"
 );
 $stmt->execute([$electionId]);
@@ -77,10 +82,27 @@ if (!$election) {
     jsonResponse(['error' => 'Election introuvable'], 404);
 }
 
+// Le controleur ne peut pas suivre une election de classe.
+if (!accesElection($pdo, $user, $election, false)) {
+    jsonResponse(['error' => 'Cette election ne vous est pas accessible'], 403);
+}
+
+$zoneE = zoneElection($election);
+
 /* ---------- Participation globale ---------- */
-$inscrits = (int)$pdo->query(
-    "SELECT COUNT(*) FROM utilisateurs WHERE role = 'electeur' AND actif = TRUE"
-)->fetchColumn();
+if ($zoneE !== '') {
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) FROM utilisateurs
+         WHERE role = 'electeur' AND actif = TRUE
+           AND LOWER(TRIM(COALESCE(zone, ''))) = LOWER(?)"
+    );
+    $stmt->execute([$zoneE]);
+    $inscrits = (int)$stmt->fetchColumn();
+} else {
+    $inscrits = (int)$pdo->query(
+        "SELECT COUNT(*) FROM utilisateurs WHERE role = 'electeur' AND actif = TRUE"
+    )->fetchColumn();
+}
 
 // Un bulletin = un votant (1 matricule = 1 vote par election).
 $stmt = $pdo->prepare("SELECT COUNT(*) FROM votes WHERE election_id = ?");
@@ -94,6 +116,9 @@ $votesNuls = (int)$stmt->fetchColumn();
 $votesValides = max(0, $votants - $votesNuls);
 
 /* ---------- Detail par zone (sans le choix de vote) ---------- */
+$filtreZone = $zoneE !== ''
+    ? " AND LOWER(TRIM(COALESCE(u.zone, ''))) = LOWER(?)"
+    : '';
 $stmt = $pdo->prepare(
     "SELECT COALESCE(NULLIF(TRIM(u.zone), ''), 'Non renseignee') AS zone,
             COUNT(*)      AS inscrits,
@@ -101,11 +126,11 @@ $stmt = $pdo->prepare(
      FROM utilisateurs u
      LEFT JOIN emargements em
             ON em.utilisateur_id = u.id AND em.election_id = ?
-     WHERE u.role = 'electeur' AND u.actif = TRUE
+     WHERE u.role = 'electeur' AND u.actif = TRUE" . $filtreZone . "
      GROUP BY 1
      ORDER BY 1"
 );
-$stmt->execute([$electionId]);
+$stmt->execute($zoneE !== '' ? [$electionId, $zoneE] : [$electionId]);
 $zones = [];
 foreach ($stmt->fetchAll() as $row) {
     $nbInscrits = (int)$row['inscrits'];
@@ -154,6 +179,7 @@ jsonResponse([
         'date_debut'        => $election['date_debut'],
         'date_fin'          => $election['date_fin'],
         'resultats_publics' => (bool)$election['resultats_publics'],
+        'zone'              => $zoneE !== '' ? $zoneE : null,
     ],
     'elections' => array_map(function ($e) {
         return [
@@ -162,6 +188,7 @@ jsonResponse([
             'statut'     => $e['statut'],
             'date_debut' => $e['date_debut'],
             'date_fin'   => $e['date_fin'],
+            'zone'       => zoneElection($e) ?: null,
         ];
     }, $elections),
     'participation' => [

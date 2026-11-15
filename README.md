@@ -1,16 +1,17 @@
-# Digital-Elect V1.2
+# Digital-Elect V1.3
 
 Application de **vote électronique** pour une école : les étudiants votent avec
 leur **matricule**, un **seul vote par matricule et par élection**, et les
 bulletins sont **anonymes**.
 
-> Version **1.2** : audit sécurité complet (XSS, SQL, permissions), limitation
-> des tentatives de connexion, installation protégée par jeton et documentation
-> de déploiement mise à jour.
+> Version **1.3** : les **élections de classe**. Le délégué organise un scrutin
+> pour sa classe (élection du délégué, du bureau, etc.) ; seuls lui et les
+> étudiants de la classe voient l'élection et ses résultats, toujours avec les
+> photos des candidats.
 >
-> Cette version introduit aussi les **liens d'inscription par classe**
-> (auto-inscription des étudiants) et le **diagramme à bandes** avec résultats
-> en direct après le vote.
+> La V1.2 avait apporté l'audit sécurité complet, la limitation des tentatives
+> de connexion, l'installation protégée par jeton, les **liens d'inscription par
+> classe** et le **diagramme à bandes** avec résultats en direct après le vote.
 
 ## Liens
 
@@ -32,11 +33,20 @@ bulletins sont **anonymes**.
 - **Connexion unique** : une nouvelle connexion invalide les sessions précédentes.
 - **Rôles** : `admin`, `gestionnaire`, `controleur`, `electeur`.
 - **Comptes créés par l'administration** ou **auto-inscription par lien de classe**.
-- **Délégué de classe (rôle `gestionnaire`)** : il ne crée et ne modifie plus
-  aucun profil. Il consulte uniquement les élèves de **sa classe** (colonne
-  `zone`) et peut retirer un profil qui ne correspond pas à sa liste. Il génère
-  le **lien d'inscription de sa classe**. L'API applique ces règles, pas
-  seulement l'interface.
+- **Délégué de classe (rôle `gestionnaire`)** : il ne crée et ne modifie aucun
+  profil. Il consulte uniquement les élèves de **sa classe** (colonne `zone`) et
+  peut retirer un profil qui ne correspond pas à sa liste. Il génère le **lien
+  d'inscription de sa classe** et organise les **élections de classe**. L'API
+  applique ces règles, pas seulement l'interface.
+- **Élections de classe** : le délégué crée un scrutin **pour sa seule classe**
+  (la zone est forcée côté serveur, jamais modifiable). L'élection, ses
+  candidats et ses résultats ne sont visibles que par **lui et les étudiants de
+  sa classe** : les autres électeurs, les contrôleurs et les visiteurs reçoivent
+  `404`/`403`. Les résultats gardent le **diagramme à bandes avec photos** et
+  sont publiés explicitement par le délégué. Un admin voit et gère toutes les
+  élections, générales comme de classe.
+- **Deux portées d'élection** : `elections.zone` vide = élection **générale**
+  (toute l'école) ; sinon = élection **de classe**, réservée à cette zone.
 - **Auto-inscription par lien de classe** : un lien à jeton (64 caractères
   hexadécimaux) porte la classe. La page `inscription.html?token=…` impose cette
   classe (préremplie, non modifiable) : l'étudiant saisit ses informations et
@@ -53,8 +63,9 @@ bulletins sont **anonymes**.
   (résultats par candidat, participation par zone). L'ancien listing des
   bulletins a été supprimé.
 - **Résultats publiés manuellement** : jamais automatiques. Après clôture,
-  l'admin clique sur **Résultats → Publier**. Avant publication, les compteurs
-  (`nb_votes`, `nombre_voix`) sont retirés des réponses publiques.
+  l'organisateur clique sur **Résultats → Publier**. Avant publication, les
+  compteurs (`nb_votes`, `nombre_voix`) sont retirés des réponses publiques.
+  Pour une élection de classe, la publication ne concerne que la classe.
 - **Photo du candidat** : redimensionnée dans le navigateur puis stockée en base
   (elle survit à un redéploiement). Seules les images sont acceptées.
 - **Résultats en diagramme à bandes** : un axe vertical gradué (pas 1/2/5
@@ -79,21 +90,22 @@ bulletins sont **anonymes**.
 - **Votes nuls** comptés séparément dans les résultats, le direct et le suivi
   live (bulletins blancs volontaires et bulletins expirés).
 - **Clôture automatique** à la date de fin ; **clôture manuelle** protégée par
-  le mot de passe de l'administrateur.
+  le mot de passe de l'organisateur connecté (admin ou délégué).
 - **Changement de mot de passe** : invalide immédiatement toutes les sessions
   du compte (`reconnecter: true`).
 - **Blocage immédiat d'un compte** : la désactivation coupe les sessions en
   cours et empêche toute reconnexion.
 - **Journal d'audit** des actions sensibles (connexions, votes, publications…).
-- **Suivi live par zone** (admin et contrôleurs) : inscrits, votants et taux de
-  participation par amphi/salle, avec le même diagramme à bandes.
+- **Suivi live par zone** (admin et contrôleurs ; pour les contrôleurs,
+  élections générales uniquement) : inscrits, votants et taux de participation
+  par amphi/salle, avec le même diagramme à bandes.
 - **Interface responsive** : palette bleue, logo Digital-Elect, favicon,
   tableaux maîtrisés sur mobile, mention « Créé par MOISE ».
 
 ## Arborescence
 
 ```
-Digital-Elect.V1.2/
+Digital-Elect.V1.3/
 ├── index.html                 Page de connexion
 ├── vote.html                  Espace électeur (vote)
 ├── dashboard.html             Espace admin / délégué de classe
@@ -134,7 +146,8 @@ Digital-Elect.V1.2/
 │   ├── schema.sql             Schéma PostgreSQL complet
 │   ├── migration_v2.sql       V1 → V2 (contrôleur, zones, émargements)
 │   ├── migration_v3_securite.sql  V2 → V3 (index anti-force brute)
-│   └── migration_v4_invitations.sql  V3 → V4 (liens de classe)
+│   ├── migration_v4_invitations.sql  V3 → V4 (liens de classe)
+│   └── migration_v5_elections_classe.sql  V4 → V5 (élections de classe)
 ├── .htaccess                  En-têtes de sécurité + CSP
 ├── .env.example               Variables d'environnement (modèle)
 ├── Dockerfile
@@ -221,12 +234,16 @@ psql -U postgres -d iai_vote -f database/migration_v3_securite.sql
 
 # V3 → V4 : liens d'inscription par classe + colonne auto_inscrit
 psql -U postgres -d iai_vote -f database/migration_v4_invitations.sql
+
+# V4 → V5 : élections de classe (colonne elections.zone + index)
+psql -U postgres -d iai_vote -f database/migration_v5_elections_classe.sql
 ```
 
 Sans `psql` (poste Windows), exécutez le contenu des fichiers via un petit
 script PHP/PDO. Les votes déjà enregistrés restent anonymes : ils ne peuvent pas
 être rattachés rétroactivement à une zone (les émargements sont comptés à partir
-de la V2).
+de la V2). La migration V5 est **sans effet sur les élections existantes** :
+leur `zone` reste vide, elles demeurent générales.
 
 ## 2. Déploiement en ligne
 
@@ -309,13 +326,20 @@ docker run -p 10000:10000 \
 - Contrôle **côté API** (`exigerRole`) pour chaque endpoint, pas seulement dans
   l'interface.
 - Gestionnaire (délégué de classe) : électeurs de **sa zone** uniquement
-  (liste, recherche, suppression d'un profil qui n'a pas voté) et gestion du
-  **lien d'inscription de sa classe**. Création et modification refusées (`403`).
+  (liste, recherche, suppression d'un profil qui n'a pas voté), gestion du
+  **lien d'inscription de sa classe** et des **élections de sa classe**
+  (création, candidats, clôture, publication, suppression). Toute action sur une
+  élection générale ou sur une autre classe est refusée (`403`).
 - Auto-inscription : `inscription.php` n'accepte la zone que depuis le jeton
   d'invitation ; aucune zone n'est lue dans le corps de la requête.
-- Contrôleur : `suivi.php` et `journal.php` en lecture seule.
-- Électeur : vote et état de son propre bulletin uniquement.
-- Admin : élections, candidats, comptes, publication.
+- Contrôleur : `suivi.php` et `journal.php` en lecture seule, **élections
+  générales uniquement**.
+- Électeur : vote et état de son propre bulletin uniquement, élections générales
+  et **celles de sa classe**.
+- Admin : élections (générales et de classe), candidats, comptes, publication.
+- Élection de classe : `zone` forcée côté serveur à la création par un délégué,
+  jamais modifiable ensuite ; l'API `elections.php`, `candidats.php`,
+  `resultats.php`, `votes.php` et `suivi.php` contrôle l'appartenance à la zone.
 
 ### Configuration et fichiers sensibles
 
@@ -355,12 +379,20 @@ docker run -p 10000:10000 \
   `volontaire: true`, ligne `candidat_id NULL`), second vote (`409`), nul chrono
   (`201`, déconnexion), résultats/direct/suivi avec barre grise « Bulletins
   nuls », axe gradué et grille horizontale, aucun débordement horizontal.
-- Parcours navigateur : admin, délégué de classe (onglets « Ma classe » et
-  « Électeurs »), contrôleur, électeur, auto-inscription, vote, bouton
-  « Voter nul » avec confirmation, diagramme à bandes, résultats publics et
-  direct, XSS stocké (aucune exécution, aucune erreur console).
+- Tests V1.3 (élections de classe) : création par le délégué avec zone forcée,
+  élection invisible pour un électeur d'une autre classe (`404`), candidats et
+  résultats refusés hors classe (`403`), contrôleur exclu du suivi d'une élection
+  de classe (`403`), admin autorisé, vote de l'électeur de la classe accepté et
+  vote hors classe refusé, clôture avec le mot de passe du délégué, publication
+  limitée à la classe, non-régression des élections générales.
+- Parcours navigateur : admin (colonne « Classe »), délégué de classe (onglet
+  « Élections de classe », modales, résultats avec photos), contrôleur, électeur,
+  auto-inscription, vote, bouton « Voter nul » avec confirmation, diagramme à
+  bandes, résultats publics et direct, XSS stocké (aucune exécution, aucune
+  erreur console).
 - Base réinitialisée par `database/schema.sql` : 6 utilisateurs, 1 élection,
-  0 vote, index `idx_journal_tentatives` présent, table `invitations` présente.
+  0 vote, index `idx_journal_tentatives` présent, table `invitations` présente,
+  colonne `elections.zone` et index `idx_elections_zone` présents.
 
 ## 5. Notes pour la soutenance
 
@@ -379,11 +411,16 @@ docker run -p 10000:10000 \
   une action explicite (« Publier ») après la clôture. Les bulletins nuls sont
   isolés sur une ligne dédiée.
 - **Séparation des pouvoirs** : l'admin organise, le délégué de classe tient la
-  liste de sa classe et son lien d'inscription, le contrôleur surveille,
-  l'électeur vote. Chaque rôle est limité par l'API.
+  liste de sa classe, son lien d'inscription et ses élections de classe, le
+  contrôleur surveille, l'électeur vote. Chaque rôle est limité par l'API.
 - **Direct maîtrisé** : pendant le scrutin, seuls les électeurs ayant déjà voté
   voient les résultats en direct ; les autres reçoivent `403`. L'onglet public
   n'affiche que les scrutins publiés.
+- **Élection de classe** : `elections.zone` porte la classe. Le serveur force la
+  zone du délégué à la création, puis vérifie cette zone à chaque lecture, vote
+  et publication : même en modifiant l'URL ou le corps JSON, un étudiant d'une
+  autre classe ne peut ni voir ni voter. Les résultats restent anonymes et
+  affichent les photos des candidats.
 
 ---
 

@@ -28,6 +28,8 @@ if (!$estAdmin) {
 
     $nbElecteurs = 0;
     $nbAuto      = 0;
+    $nbElections = 0;
+    $nbEnCours   = 0;
     if ($zone !== '') {
         $stmt = $pdo->prepare(
             "SELECT COUNT(*) FROM utilisateurs
@@ -44,6 +46,24 @@ if (!$estAdmin) {
         );
         $stmt->execute([$zone]);
         $nbAuto = (int)$stmt->fetchColumn();
+
+        // Le delegue ne compte que les elections de SA classe.
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM elections
+             WHERE TRIM(COALESCE(zone, '')) <> ''
+               AND LOWER(TRIM(zone)) = LOWER(?)"
+        );
+        $stmt->execute([$zone]);
+        $nbElections = (int)$stmt->fetchColumn();
+
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM elections
+             WHERE statut = 'en_cours'
+               AND TRIM(COALESCE(zone, '')) <> ''
+               AND LOWER(TRIM(zone)) = LOWER(?)"
+        );
+        $stmt->execute([$zone]);
+        $nbEnCours = (int)$stmt->fetchColumn();
     }
 
     jsonResponse([
@@ -53,8 +73,8 @@ if (!$estAdmin) {
             'zone'          => $zone,
             'electeurs'     => $nbElecteurs,
             'auto_inscrits' => $nbAuto,
-            'elections'     => (int)$pdo->query("SELECT COUNT(*) FROM elections")->fetchColumn(),
-            'en_cours'      => (int)$pdo->query("SELECT COUNT(*) FROM elections WHERE statut = 'en_cours'")->fetchColumn(),
+            'elections'     => $nbElections,
+            'en_cours'      => $nbEnCours,
             'votes'         => null, // non expose au delegue
         ],
         'dernieres_elections' => [],

@@ -39,7 +39,9 @@ async function chargerElections() {
     }
 
     select.innerHTML = elections.map(e =>
-        `<option value="${e.id}">${echapper(e.titre)}${e.statut === 'en_cours' ? ' — en direct' : ''}</option>`
+        `<option value="${e.id}">${echapper(e.titre)}${
+            e.zone ? ' — classe ' + echapper(e.zone) : ''
+        }${e.statut === 'en_cours' ? ' — en direct' : ''}</option>`
     ).join('');
 
     select.addEventListener('change', () => chargerResultats(select.value));
@@ -66,7 +68,11 @@ function rendreResultats(data) {
 
     let html = `<div class="carte">
         <div class="carte-titre">
-            <span>${echapper(data.election.titre)} ${badgeStatut(data.election.statut)}</span>
+            <span>${echapper(data.election.titre)} ${badgeStatut(data.election.statut)}${
+                data.election.zone
+                    ? ` <span class="badge badge-bleu">Élection de classe · ${echapper(data.election.zone)}</span>`
+                    : ''
+            }</span>
             ${enDirect ? `<span class="badge badge-vert">● En direct — ${heure}</span>` : ''}
         </div>
         <p class="resume-resultats">

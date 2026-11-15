@@ -102,7 +102,12 @@ async function chargerElections() {
 async function afficherElection(zone, election) {
     const carte = document.createElement('div');
     carte.className = 'carte';
-    carte.innerHTML = `<div class="carte-titre">${echapper(election.titre)} ${badgeStatut(election.statut)}</div>`;
+    const badgeClasse = election.zone
+        ? `<span class="badge badge-bleu">Élection de classe · ${echapper(election.zone)}</span>`
+        : '';
+    carte.innerHTML = `<div class="carte-titre">
+        <span>${echapper(election.titre)} ${badgeStatut(election.statut)} ${badgeClasse}</span>
+    </div>`;
 
     // L'électeur a-t-il déjà voté ? (le serveur renvoie aussi le temps restant)
     const { data: etat } = await API.get(`votes.php?action=a_vote&election_id=${election.id}`);
@@ -131,7 +136,7 @@ async function afficherElection(zone, election) {
             carte.appendChild(live);
             demarrerResultatsLive(election, live);
         } else {
-            carte.innerHTML += `<p class="aide">Le scrutin est terminé. Les résultats seront publiés par l'administration.</p>`;
+            carte.innerHTML += `<p class="aide">Le scrutin est terminé. Les résultats seront publiés par l'organisateur.</p>`;
         }
 
         zone.appendChild(carte);

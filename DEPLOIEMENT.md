@@ -1,4 +1,4 @@
-# Guide de déploiement — Digital-Elect V1.2 (alternative Render)
+# Guide de déploiement — Digital-Elect V1.3 (alternative Render)
 
 > ⚠️ **Note (2026) :** Render **exige une carte bancaire**, même pour la base
 > PostgreSQL gratuite. L'application est donc déployée sur **alwaysdata**
@@ -32,7 +32,7 @@ Ce guide met l'application en ligne sur **Render.com**, avec une base
 1. Téléchargez **GitHub Desktop** : https://desktop.github.com
 2. Installez-le et connectez-vous avec votre compte GitHub.
 3. Menu **File → Add local repository…** puis choisissez le dossier
-   `Digital-Elect.V1.2` (celui de `Documents`, pas celui de XAMPP).
+   `Digital-Elect.V1.3` (celui de `Documents`, pas celui de XAMPP).
    - S'il propose de créer un dépôt : acceptez (**create a repository**).
 4. Cliquez **Publish repository**, choisissez la visibilité, puis **Publish**.
 
@@ -83,7 +83,7 @@ Le build prend ~5–10 minutes.
    https://<votre-service>.onrender.com/
    ```
 
-### Base existante (V1 → V2 → V3 → V4)
+### Base existante (V1 → V2 → V3 → V4 → V5)
 
 N'utilisez pas `install.php` sur une base déjà peuplée. Appliquez les migrations :
 
@@ -91,12 +91,15 @@ N'utilisez pas `install.php` sur une base déjà peuplée. Appliquez les migrati
 psql "$DATABASE_URL" -f database/migration_v2.sql
 psql "$DATABASE_URL" -f database/migration_v3_securite.sql
 psql "$DATABASE_URL" -f database/migration_v4_invitations.sql
+psql "$DATABASE_URL" -f database/migration_v5_elections_classe.sql
 ```
 
 - **V2** : rôle `controleur`, colonne `zone`, table `emargements` ;
 - **V3** : index `idx_journal_tentatives` (limitation des tentatives) ;
 - **V4** : table `invitations` (liens d'inscription par classe) et colonne
-  `auto_inscrit`.
+  `auto_inscrit` ;
+- **V5** : colonne `elections.zone` + index `idx_elections_zone` (élections de
+  classe ; zone vide = élection générale).
 
 ---
 
@@ -143,7 +146,13 @@ psql "$DATABASE_URL" -f database/migration_v4_invitations.sql
   Passé le délai, le bulletin devient **nul** et l'électeur est déconnecté.
   Durée modifiable dans `api/config.php` (`DUREE_VOTE`, en secondes).
 - **Résultats** : jamais automatiques. Après la clôture (auto à la date de fin,
-  ou manuelle avec mot de passe admin), cliquez **Résultats → Publier**.
+  ou manuelle avec le mot de passe de l'organisateur connecté), cliquez
+  **Résultats → Publier**. Pour une élection de classe, la publication est
+  limitée au délégué et aux étudiants de la classe.
+- **Élections de classe** : le délégué crée un scrutin pour **sa** classe
+  (colonne `elections.zone`, forcée côté serveur). Élection, candidats et
+  résultats sont invisibles pour les autres classes, les contrôleurs et les
+  visiteurs. L'admin voit et gère tout.
 - **Liens de classe** : le délégué génère un lien depuis l'onglet **Ma classe**.
   Il impose la zone de la classe ; un seul lien actif à la fois (validité
   90 jours). Les comptes créés sont marqués `auto_inscrit`.
@@ -169,7 +178,8 @@ psql "$DATABASE_URL" -f database/migration_v4_invitations.sql
 | Page blanche / 500 | Consultez les **Logs** du service sur Render. |
 | « Aucune élection ouverte » | Dans le tableau de bord, ouvrez le scrutin (bouton **Ouvrir**). |
 | Rôle administrateur perdu | Vérifiez : `SELECT role FROM utilisateurs WHERE matricule='admin';` |
-| Résultats invisibles | Ils doivent être publiés : **Résultats → Publier** après la clôture. |
+| Résultats invisibles | Ils doivent être publiés : **Résultats → Publier** après la clôture. Pour une élection de classe, seuls le délégué et les étudiants de la classe les voient. |
+| Colonne `elections.zone` absente | Appliquez `database/migration_v5_elections_classe.sql`. |
 
 ---
 

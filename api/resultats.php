@@ -51,8 +51,18 @@ if (!$election) {
 $compact = !empty($_GET['compact']);
 $user    = getAuthUser($pdo, false);
 $role    = $user['user_role'] ?? '';
+$zoneE   = zoneElection($election);
 
 /* ---------- Controle d'acces ---------- */
+// Une election de classe n'existe que pour le delegue et les
+// etudiants de la classe : personne d'autre ne peut voir ses resultats.
+if (!accesElection($pdo, $user, $election, false)) {
+    jsonResponse([
+        'success' => false,
+        'error'   => 'Ces resultats ne vous sont pas accessibles'
+    ], 403);
+}
+
 $autorise = !empty($election['resultats_publics'])
     || in_array($role, ['admin', 'gestionnaire', 'controleur'], true);
 
@@ -124,7 +134,22 @@ unset($c);
 // Le total de participation inclut les bulletins nuls (bulletins blancs).
 $votesNuls  = (int)$pdo->query("SELECT COUNT(*) FROM votes WHERE election_id = " . (int)$electionId . " AND candidat_id IS NULL")->fetchColumn();
 $totalVotes = $totalValides + $votesNuls;
-$inscrits   = (int)$pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'electeur' AND actif = TRUE")->fetchColumn();
+
+// Pour une election de classe, la participation se calcule sur les
+// etudiants de la classe ; pour une election generale, sur toute l'ecole.
+if ($zoneE !== '') {
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) FROM utilisateurs
+         WHERE role = 'electeur' AND actif = TRUE
+           AND LOWER(TRIM(COALESCE(zone, ''))) = LOWER(?)"
+    );
+    $stmt->execute([$zoneE]);
+    $inscrits = (int)$stmt->fetchColumn();
+} else {
+    $inscrits = (int)$pdo->query(
+        "SELECT COUNT(*) FROM utilisateurs WHERE role = 'electeur' AND actif = TRUE"
+    )->fetchColumn();
+}
 
 jsonResponse([
     'success' => true,
@@ -134,6 +159,7 @@ jsonResponse([
         'titre'             => $election['titre'],
         'statut'            => $election['statut'],
         'resultats_publics' => (bool)$election['resultats_publics'],
+        'zone'              => $zoneE !== '' ? $zoneE : null,
     ],
     'total_votes'   => $totalVotes,
     'votes_valides' => $totalValides,

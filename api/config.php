@@ -368,6 +368,75 @@ function zoneCanonique($pdo, $zone) {
 }
 
 /* ------------------------------------------------------------
+   ELECTIONS DE CLASSE
+   ------------------------------------------------------------
+   Une election dont la zone est vide est une election generale
+   (toute l'ecole). Sinon elle est reservee a la classe indiquee
+   et organisee par le delegue de cette classe.
+   ------------------------------------------------------------ */
+
+/** Zone (classe) d'une election ; chaine vide = election generale. */
+function zoneElection($election) {
+    $zone = is_array($election) ? ($election['zone'] ?? '') : $election;
+    return normaliserZone($zone);
+}
+
+/** Une election est-elle reservee a une classe ? */
+function electionEstClasse($election) {
+    return zoneElection($election) !== '';
+}
+
+/**
+ * Droits d'acces a une election.
+ *
+ *   admin        : tout ;
+ *   gestionnaire : uniquement les elections de SA classe ;
+ *   controleur   : elections generales seulement ;
+ *   electeur     : elections generales + celles de sa classe ;
+ *   visiteur     : elections generales.
+ *
+ * $gestion = true exige le droit d'ORGANISER l'election
+ * (creation, cloture, publication, candidats, suppression) :
+ * seul l'admin et le delegue de la classe concerne y ont droit.
+ */
+function accesElection($pdo, $user, $election, $gestion = false) {
+    $role  = $user['user_role'] ?? '';
+    $zoneE = zoneElection($election);
+
+    if ($role === 'admin') {
+        return true;
+    }
+
+    // Pour organiser : uniquement le delegue de la classe concernee.
+    if ($gestion) {
+        if ($role !== 'gestionnaire' || $zoneE === '') {
+            return false;
+        }
+        $maZone = zoneUtilisateur($pdo, (int)$user['user_id']);
+        return $maZone !== '' && strcasecmp($zoneE, $maZone) === 0;
+    }
+
+    if ($role === 'gestionnaire') {
+        if ($zoneE === '') {
+            return false;
+        }
+        $maZone = zoneUtilisateur($pdo, (int)$user['user_id']);
+        return $maZone !== '' && strcasecmp($zoneE, $maZone) === 0;
+    }
+
+    if ($role === 'electeur') {
+        if ($zoneE === '') {
+            return true;
+        }
+        $maZone = zoneUtilisateur($pdo, (int)$user['user_id']);
+        return $maZone !== '' && strcasecmp($zoneE, $maZone) === 0;
+    }
+
+    // Controleur et visiteur anonyme : elections generales uniquement.
+    return $zoneE === '';
+}
+
+/* ------------------------------------------------------------
    REPONSES / ENTREES JSON
    ------------------------------------------------------------ */
 function jsonResponse($data, $code = 200) {

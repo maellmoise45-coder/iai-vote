@@ -59,8 +59,11 @@ CREATE TABLE elections (
     statut             VARCHAR(20) NOT NULL DEFAULT 'a_venir'
                        CHECK (statut IN ('a_venir', 'en_cours', 'terminee', 'publiee', 'annulee')),
     resultats_publics  BOOLEAN NOT NULL DEFAULT FALSE,
+    zone               VARCHAR(100),                    -- NULL = election generale ; sinon classe
     cree_le            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_elections_zone ON elections(zone);
 
 -- ============================================================
 --  CANDIDATS

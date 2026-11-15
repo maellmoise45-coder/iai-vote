@@ -1,6 +1,6 @@
 # Guide de déploiement — alwaysdata (solution retenue)
 
-> **Application : Digital-Elect V1.2**
+> **Application : Digital-Elect V1.3**
 > **En ligne :** https://digitalelect.alwaysdata.net
 
 alwaysdata est un hébergeur **français**, avec une offre **gratuite à vie,
@@ -40,11 +40,23 @@ sans carte bancaire**, qui fournit du **PHP** et du **PostgreSQL**.
    `X-Install-Token` : tables + données de démonstration.
 6. **`api/install.php`** supprimé du serveur (404) et `INSTALL_TOKEN` retiré de
    `config.local.php`.
-7. **Migrations** `migration_v2.sql`, `migration_v3_securite.sql` puis
-   `migration_v4_invitations.sql` appliquées si la base existait déjà.
+7. **Migrations** `migration_v2.sql`, `migration_v3_securite.sql`,
+   `migration_v4_invitations.sql` puis `migration_v5_elections_classe.sql`
+   appliquées si la base existait déjà.
 8. **Tests** validés en ligne : connexions des 4 rôles, permissions, vote,
    double vote `409`, vote nul, clôture protégée, publication des résultats,
    anonymat, en-têtes de sécurité.
+
+### Nouveautés V1.3 (élections de classe)
+
+- Le **délégué de classe** peut organiser un scrutin **pour sa classe** :
+  élection du délégué, du bureau, d'un responsable, etc.
+- La zone (classe) est **forcée par le serveur** à la création et n'est plus
+  modifiable : impossible de créer une élection pour une autre classe.
+- L'élection, ses candidats et ses résultats ne sont visibles que par **le
+  délégué et les étudiants de la classe**. Les autres reçoivent `404`/`403`.
+- Les résultats conservent le **diagramme à bandes avec les photos** ; la
+  publication est explicite et limitée à la classe. L'admin voit tout.
 
 ### Nouveautés V1.2 (liens de classe + direct)
 
@@ -173,7 +185,7 @@ vote existants deviendraient invalides.
 > Sans jeton valide, `install.php` répond `403` et ne crée rien.
 > Ne laissez jamais ce fichier en ligne après l'installation.
 
-### Base déjà existante (V1 → V2 → V3 → V4)
+### Base déjà existante (V1 → V2 → V3 → V4 → V5)
 
 N'exécutez **pas** `install.php` : il ne fait rien si la table `utilisateurs`
 existe, mais les migrations sont nécessaires.
@@ -187,13 +199,18 @@ psql -h postgresql-digitalelect.alwaysdata.net -U digitalelect -d digitalelect_v
 
 psql -h postgresql-digitalelect.alwaysdata.net -U digitalelect -d digitalelect_vote \
      -f database/migration_v4_invitations.sql
+
+psql -h postgresql-digitalelect.alwaysdata.net -U digitalelect -d digitalelect_vote \
+     -f database/migration_v5_elections_classe.sql
 ```
 
 Les migrations ajoutent :
 
 - **V2** : rôle `controleur`, colonne `zone`, table `emargements` ;
 - **V3** : index `idx_journal_tentatives` pour la limitation des tentatives ;
-- **V4** : table `invitations` (liens de classe) et colonne `auto_inscrit`.
+- **V4** : table `invitations` (liens de classe) et colonne `auto_inscrit` ;
+- **V5** : colonne `elections.zone` + index `idx_elections_zone` (élections de
+  classe ; une zone vide = élection générale).
 
 > Sans `psql` sur votre poste, exécutez le contenu des fichiers via un petit
 > script PHP/PDO (comme pour les précédentes migrations).
@@ -259,8 +276,10 @@ WHERE id = 1;
 | `https://…/README.md` | `403` ou `404` |
 | `https://…/api/install.php` (sans jeton) | `403` |
 | Connexion admin | tableau de bord avec onglets Élections, Électeurs, Liens de classe, Suivi, Journal |
-| Connexion gestionnaire | onglets « Électeurs » (sa classe) et « Ma classe » uniquement |
-| Connexion contrôleur | Suivi live + Journal, aucune action de gestion |
+| Connexion gestionnaire | onglets « Élections de classe », « Électeurs » (sa classe) et « Ma classe » |
+| Élection de classe | créée par le délégué, visible seulement par sa classe ; photos dans les résultats |
+| Résultats d'une classe | visibles par le délégué et les étudiants de la classe, pas par les autres |
+| Connexion contrôleur | Suivi live + Journal, élections générales uniquement, aucune action de gestion |
 | Lien de classe délégué | bouton **Copier** → `inscription.html?token=…` s'ouvre sur la bonne classe |
 | Auto-inscription | la classe affichée est verrouillée, l'inscription connecte directement l'étudiant |
 | Direct après vote | diagramme en bandes visible, actualisé toutes les 5 s |
@@ -288,11 +307,12 @@ WHERE id = 1;
 | Lien de classe introuvable | Le token a été révoqué ou remplacé : générez un nouveau lien depuis **Ma classe**. |
 | « Aucune classe associée » (délégué) | L'admin doit renseigner la **zone** du compte gestionnaire. |
 | Table `invitations` absente | Appliquez `database/migration_v4_invitations.sql`. |
+| Colonne `elections.zone` absente | Appliquez `database/migration_v5_elections_classe.sql` (les élections de classe échouent sinon). |
 | `config.php` renvoie `403` | Normal : le fichier n'est jamais servi directement. |
 | Page blanche / 500 | Consultez les logs PHP dans le panneau alwaysdata. |
 | « Aucune élection ouverte » | Dans le tableau de bord admin : **Ouvrir** le scrutin. |
 | Mot de passe admin perdu | `SELECT role FROM utilisateurs WHERE matricule='admin';` puis réinitialisation par un autre admin, ou via la base. |
-| Résultats invisibles | Ils doivent être publiés : **Résultats → Publier** après la clôture. |
+| Résultats invisibles | Ils doivent être publiés : **Résultats → Publier** après la clôture. Pour une élection de classe, seuls le délégué et les étudiants de la classe les voient. |
 | Session invalidée | Une nouvelle connexion au même compte invalide l'ancienne ; un changement de mot de passe aussi. |
 
 ---

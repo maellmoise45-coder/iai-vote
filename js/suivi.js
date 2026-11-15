@@ -42,7 +42,9 @@ const Suivi = (() => {
         if (selecteur.dataset.signature !== signature) {
             selecteur.innerHTML = elections.length
                 ? elections.map(e =>
-                    `<option value="${e.id}">${echapper(e.titre)} — ${LIBELLE_STATUT[e.statut] || echapper(e.statut)}</option>`
+                    `<option value="${e.id}">${echapper(e.titre)}${
+                        e.zone ? ' (classe ' + echapper(e.zone) + ')' : ''
+                    } — ${LIBELLE_STATUT[e.statut] || echapper(e.statut)}</option>`
                   ).join('')
                 : '<option value="">Aucune élection</option>';
             selecteur.dataset.signature = signature;
@@ -115,7 +117,9 @@ const Suivi = (() => {
         return `
             <div class="carte">
                 <div class="carte-titre">
-                    <span>${echapper(e.titre)} ${badgeStatut(e.statut)}</span>
+                    <span>${echapper(e.titre)} ${badgeStatut(e.statut)}${
+                        e.zone ? ` <span class="badge badge-bleu">Classe ${echapper(e.zone)}</span>` : ''
+                    }</span>
                     <span style="font-size:12px; color:var(--gris); font-weight:500;">↻ ${heure}</span>
                 </div>
 

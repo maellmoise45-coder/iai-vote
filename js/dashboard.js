@@ -17,7 +17,7 @@ const LIBELLE_ROLE = {
     gestionnaire: 'Délégué de classe',
 };
 
-let vueActive = estAdmin ? 'elections' : 'invitation';
+let vueActive = 'elections';
 let etatComptes = { role: 'electeur', q: '', page: 1 };
 
 if (user) {
@@ -26,17 +26,21 @@ if (user) {
         `<small>${LIBELLE_ROLE[user.role] || echapper(user.role)}${
             !estAdmin && user.zone ? ' — ' + echapper(user.zone) : ''}</small>`;
 
-    // Le délégué n'a accès qu'à sa classe et aux liens d'inscription.
+    // Le délégué gère les élections de sa classe, sa liste d'élèves
+    // et le lien d'inscription de la classe.
     if (!estAdmin) {
-        ['onglet-elections', 'onglet-gestionnaires', 'onglet-controleurs', 'onglet-suivi', 'onglet-journal']
+        ['onglet-gestionnaires', 'onglet-controleurs', 'onglet-suivi', 'onglet-journal']
             .forEach(id => document.getElementById(id)?.remove());
+
+        const ongletElections = document.getElementById('onglet-elections');
+        if (ongletElections) ongletElections.textContent = 'Élections de classe';
 
         const ongletInvitation = document.getElementById('onglet-invitation');
         if (ongletInvitation) ongletInvitation.textContent = 'Ma classe';
 
-        vueActive = 'invitation';
+        vueActive = 'elections';
         document.querySelectorAll('.onglet').forEach(o =>
-            o.classList.toggle('actif', o.dataset.vue === 'invitation'));
+            o.classList.toggle('actif', o.dataset.vue === 'elections'));
     }
 }
 
@@ -100,9 +104,10 @@ function afficherVue() {
     const vue = document.getElementById('vue');
     vue.innerHTML = '<div class="carte"><p class="vide">Chargement…</p></div>';
 
-    // Sécurité côté client : un gestionnaire n'a pas accès aux élections.
-    if (!estAdmin && !['electeurs', 'invitation'].includes(vueActive)) {
-        vueActive = 'invitation';
+    // Sécurité côté client : un gestionnaire n'a pas accès aux vues
+    // globales (délégués, contrôleurs, suivi, journal).
+    if (!estAdmin && !['elections', 'electeurs', 'invitation'].includes(vueActive)) {
+        vueActive = 'elections';
     }
 
     if (vueActive === 'elections') vueElections(vue);
@@ -127,7 +132,7 @@ async function chargerStats() {
         grille.innerHTML = `
             <div class="stat"><div class="valeur">${s.electeurs}</div><div class="libelle">Élèves dans ma classe</div></div>
             <div class="stat"><div class="valeur">${s.auto_inscrits}</div><div class="libelle">Inscrits via le lien</div></div>
-            <div class="stat"><div class="valeur">${s.elections}</div><div class="libelle">Élections</div></div>
+            <div class="stat"><div class="valeur">${s.elections}</div><div class="libelle">Élections de classe</div></div>
             <div class="stat"><div class="valeur">${s.en_cours}</div><div class="libelle">Scrutins en cours</div></div>
         `;
         return;
@@ -149,20 +154,27 @@ async function chargerStats() {
 async function vueElections(conteneur) {
     const { data } = await API.get('elections.php');
     const elections = data.data || [];
+    const titre = estAdmin ? 'Élections' : 'Élections de classe';
+    const badgeClasse = !estAdmin && user.zone
+        ? `<span class="badge badge-bleu">Classe ${echapper(user.zone)}</span>` : '';
 
     let html = `
         <div class="carte">
             <div class="carte-titre">
-                <span>Élections (${elections.length})</span>
-                <button class="btn btn-primaire btn-petit" id="btn-nouvelle-election">+ Nouvelle élection</button>
+                <span>${titre} (${elections.length}) ${badgeClasse}</span>
+                <button class="btn btn-primaire btn-petit" id="btn-nouvelle-election">
+                    + ${estAdmin ? 'Nouvelle élection' : 'Nouvelle élection de classe'}
+                </button>
             </div>`;
 
     if (elections.length === 0) {
-        html += `<p class="vide">Aucune élection. Créez-en une pour commencer.</p>`;
+        html += `<p class="vide">${estAdmin
+            ? 'Aucune élection. Créez-en une pour commencer.'
+            : 'Aucune élection de classe pour le moment. Créez-en une pour élire votre délégué, par exemple.'}</p>`;
     } else {
         html += `<div class="tableau-scroll"><table class="tableau">
             <thead><tr>
-                <th>Titre</th><th>Statut</th><th>Dates</th>
+                <th>Titre</th>${estAdmin ? '<th>Classe</th>' : ''}<th>Statut</th><th>Dates</th>
                 <th>Cand.</th><th>Votes</th><th>Actions</th>
             </tr></thead><tbody>`;
         for (const e of elections) {
@@ -172,19 +184,29 @@ async function vueElections(conteneur) {
                 ? `<button class="btn btn-danger btn-petit" data-act="cloturer" data-id="${e.id}">Clôturer</button>` : '';
             const publier = e.statut === 'terminee'
                 ? `<button class="btn btn-primaire btn-petit" data-act="publier" data-id="${e.id}">Publier</button>` : '';
+            // Pour l'admin, la classe a sa propre colonne : inutile de
+            // répéter le badge dans la cellule du titre.
+            const badgeE = !estAdmin && e.zone
+                ? `<span class="badge badge-bleu">Classe ${echapper(e.zone)}</span>` : '';
+            const celluleClasse = estAdmin
+                ? `<td>${e.zone
+                    ? echapper(e.zone)
+                    : '<span style="color:var(--gris)">Toute l\'école</span>'}</td>`
+                : '';
 
             html += `<tr>
-                <td><b>${echapper(e.titre)}</b></td>
+                <td><b>${echapper(e.titre)}</b> ${badgeE}</td>
+                ${celluleClasse}
                 <td>${badgeStatut(e.statut)}</td>
                 <td style="font-size:13px; color:var(--gris);">${formaterDate(e.date_debut)} → ${formaterDate(e.date_fin)}</td>
                 <td>${e.nb_candidats}</td>
-                <td>${e.nb_votes}</td>
+                <td>${e.nb_votes != null ? e.nb_votes : '—'}</td>
                 <td><div class="actions">
                     <button class="btn btn-neutre btn-petit" data-act="candidats" data-id="${e.id}">Candidats</button>
                     ${demarrer}${cloturer}${publier}
                     <button class="btn btn-neutre btn-petit" data-act="resultats" data-id="${e.id}">Résultats</button>
                     <button class="btn btn-neutre btn-petit" data-act="modifier" data-id="${e.id}">Modifier</button>
-                    ${estAdmin ? `<button class="btn btn-danger btn-petit" data-act="supprimer" data-id="${e.id}">Suppr.</button>` : ''}
+                    <button class="btn btn-danger btn-petit" data-act="supprimer" data-id="${e.id}">Suppr.</button>
                 </div></td>
             </tr>`;
         }
@@ -214,17 +236,37 @@ async function vueElections(conteneur) {
 
 function modaleElection(election) {
     const e = election || {};
+    const titreModale = election
+        ? (estAdmin ? 'Modifier l\'élection' : 'Modifier l\'élection de classe')
+        : (estAdmin ? 'Nouvelle élection' : 'Nouvelle élection de classe');
+
+    let champZone;
+    if (!estAdmin) {
+        champZone = `<div class="champ"><label>Classe</label>
+            <input value="${echapper(user.zone || 'non renseignée')}" disabled>
+            <small class="aide">Une élection de classe est réservée à votre classe : seuls vos étudiants la voient et votent.</small></div>`;
+    } else if (election) {
+        champZone = `<div class="champ"><label>Classe</label>
+            <input value="${echapper(e.zone || 'Toute l\'école')}" disabled>
+            <small class="aide">La portée d'une élection ne peut plus être modifiée.</small></div>`;
+    } else {
+        champZone = `<div class="champ"><label>Classe (optionnel)</label>
+            <input name="zone" placeholder="ex : L1B">
+            <small class="aide">Laisser vide pour une élection générale (toute l'école).</small></div>`;
+    }
+
     const champs = `
         <div class="champ"><label>Titre</label>
             <input name="titre" required value="${echapper(e.titre || '')}"></div>
         <div class="champ"><label>Description</label>
             <textarea name="description">${echapper(e.description || '')}</textarea></div>
+        ${champZone}
         <div class="champ"><label>Date de début</label>
             <input type="datetime-local" name="date_debut" value="${echapper(e.date_debut ? e.date_debut.slice(0,16) : '')}"></div>
         <div class="champ"><label>Date de fin</label>
             <input type="datetime-local" name="date_fin" value="${echapper(e.date_fin ? e.date_fin.slice(0,16) : '')}"></div>`;
 
-    ouvrirModale(election ? 'Modifier l\'élection' : 'Nouvelle élection', champs, async (fd) => {
+    ouvrirModale(titreModale, champs, async (fd) => {
         const corps = {
             titre: fd.get('titre').trim(),
             description: fd.get('description').trim(),
@@ -232,6 +274,10 @@ function modaleElection(election) {
             date_fin: fd.get('date_fin') || null,
         };
         if (!corps.titre) return 'Le titre est obligatoire.';
+        // La zone n'est envoyée qu'à la création par l'admin.
+        if (estAdmin && !election) {
+            corps.zone = (fd.get('zone') || '').trim();
+        }
 
         const rep = election
             ? await API.put('elections.php', { id: election.id, ...corps })
@@ -277,9 +323,14 @@ function modaleCloturer(election) {
     }, 'Clôturer');
 }
 
-// PUBLIER les résultats : ils deviennent visibles par tout le monde.
+// PUBLIER les résultats : pour une élection générale ils deviennent
+// visibles par tout le monde ; pour une élection de classe, seulement
+// par le délégué et les étudiants de la classe.
 async function publierResultats(election) {
-    if (!confirm(`Publier les résultats de « ${election.titre} » ? Ils seront visibles par tous.`)) return;
+    const portee = election.zone
+        ? `les étudiants de la classe ${election.zone}`
+        : 'tout le monde';
+    if (!confirm(`Publier les résultats de « ${election.titre} » ? Ils seront visibles par ${portee}.`)) return;
     const { ok, data } = await API.put('elections.php', { id: election.id, publier: true });
     if (!ok || !data.success) { afficherMessage('message', data.error || 'Erreur.', 'erreur'); return; }
     afficherMessage('message', data.message || 'Résultats publiés.', 'succes');
@@ -518,16 +569,25 @@ async function modaleResultats(election) {
     }
 
     // Publication explicite (uniquement après clôture, si pas déjà publiée).
+    const estClasse = !!data.election.zone;
     const peutPublier = !data.election.resultats_publics &&
         ['terminee', 'publiee'].includes(data.election.statut);
     if (peutPublier) {
         html += `<div style="margin-top:18px;">
-            <button type="button" class="btn btn-primaire" id="btn-publier-resultats">Publier les résultats</button>
-            <span style="color:var(--gris); font-size:13px; margin-left:8px;">Ils deviendront visibles par tous.</span>
+            <button type="button" class="btn btn-primaire" id="btn-publier-resultats">${
+                estClasse ? 'Publier auprès de la classe' : 'Publier les résultats'
+            }</button>
+            <span style="color:var(--gris); font-size:13px; margin-left:8px;">${
+                estClasse
+                    ? 'Visibles uniquement par vous et les étudiants de ' + echapper(data.election.zone) + '.'
+                    : 'Ils deviendront visibles par tous.'
+            }</span>
         </div>`;
     }
 
-    ouvrirModale('Résultats — ' + election.titre, html, async () => { fermerModale(); return null; }, 'Fermer');
+    const titreModale = 'Résultats — ' + election.titre +
+        (data.election.zone ? ' (classe ' + data.election.zone + ')' : '');
+    ouvrirModale(titreModale, html, async () => { fermerModale(); return null; }, 'Fermer');
 
     if (peutPublier) {
         document.getElementById('btn-publier-resultats').addEventListener('click', async () => {

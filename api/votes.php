@@ -67,6 +67,17 @@ function aVote($pdo) {
         jsonResponse(['error' => 'election_id requis'], 400);
     }
 
+    // Election de classe : l'electeur doit appartenir a la classe.
+    $stmt = $pdo->prepare("SELECT id, statut, zone FROM elections WHERE id = ?");
+    $stmt->execute([$electionId]);
+    $election = $stmt->fetch();
+    if (!$election) {
+        jsonResponse(['error' => 'Election introuvable'], 404);
+    }
+    if (!accesElection($pdo, $user, $election, false)) {
+        jsonResponse(['error' => 'Cette election ne vous est pas accessible'], 403);
+    }
+
     // Le matricule est lu en base (le jeton ne contient que l'id)
     $stmt = $pdo->prepare("SELECT matricule FROM utilisateurs WHERE id = ?");
     $stmt->execute([$user['user_id']]);
@@ -137,13 +148,18 @@ function createVote($pdo, $user, $data) {
     $pdo->beginTransaction();
     try {
         // 1) Verrouiller l'election (serialise les votes concurrents)
-        $stmt = $pdo->prepare("SELECT id, statut FROM elections WHERE id = ? FOR UPDATE");
+        $stmt = $pdo->prepare("SELECT id, statut, zone FROM elections WHERE id = ? FOR UPDATE");
         $stmt->execute([$electionId]);
         $election = $stmt->fetch();
 
         if (!$election) {
             $pdo->rollBack();
             jsonResponse(['error' => 'Election introuvable'], 404);
+        }
+        // Une election de classe est reservee aux etudiants de la classe.
+        if (!accesElection($pdo, $user, $election, false)) {
+            $pdo->rollBack();
+            jsonResponse(['error' => 'Cette election ne vous est pas accessible'], 403);
         }
         if ($election['statut'] !== 'en_cours') {
             $pdo->rollBack();
@@ -260,6 +276,16 @@ function expirerVote($pdo, $user, $data) {
     $electionId = (int)($data['election_id'] ?? 0);
     if (!$electionId) {
         jsonResponse(['error' => 'election_id requis'], 400);
+    }
+
+    $stmt = $pdo->prepare("SELECT id, zone FROM elections WHERE id = ?");
+    $stmt->execute([$electionId]);
+    $election = $stmt->fetch();
+    if (!$election) {
+        jsonResponse(['error' => 'Election introuvable'], 404);
+    }
+    if (!accesElection($pdo, $user, $election, false)) {
+        jsonResponse(['error' => 'Cette election ne vous est pas accessible'], 403);
     }
 
     $stmt = $pdo->prepare("SELECT matricule FROM utilisateurs WHERE id = ?");
