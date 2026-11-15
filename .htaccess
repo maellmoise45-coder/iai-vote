@@ -9,6 +9,8 @@
 Options -Indexes
 
 <IfModule mod_headers.c>
+    # Ne pas exposer la version de PHP
+    Header always unset X-Powered-By
     # Empêche le navigateur de "deviner" le type de fichier
     Header set X-Content-Type-Options "nosniff"
     # Interdit l'affichage du site dans une iframe (anti-clickjacking)

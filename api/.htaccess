@@ -24,6 +24,7 @@
 </FilesMatch>
 
 <IfModule mod_headers.c>
+    Header always unset X-Powered-By
     # Les reponses de l'API ne doivent jamais etre mises en cache.
     Header set Cache-Control "no-store, max-age=0"
 </IfModule>

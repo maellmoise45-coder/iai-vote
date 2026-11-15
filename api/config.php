@@ -115,6 +115,7 @@ if ($origine !== '' && APP_ORIGIN !== '' && rtrim($origine, '/') === rtrim(APP_O
     header('Access-Control-Max-Age: 600');
 }
 
+header_remove('X-Powered-By');
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, max-age=0');
 
