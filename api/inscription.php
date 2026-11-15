@@ -40,6 +40,9 @@ switch ($method) {
    Verification du lien (avant affichage du formulaire)
    ------------------------------------------------------------ */
 function verifierLien($pdo) {
+    // Limitation par IP (endpoint public).
+    limiterRequetes('inscription', 30, 300, null);
+
     $token = trim((string)($_GET['token'] ?? ''));
 
     if (tropDeTokensInvalides($pdo)) {
@@ -76,6 +79,9 @@ function verifierLien($pdo) {
    Inscription
    ------------------------------------------------------------ */
 function inscrire($pdo) {
+    // Limitation par IP (endpoint public).
+    limiterRequetes('inscription_post', 20, 300, null);
+
     $data = getJsonBody();
     $token = trim((string)($data['token'] ?? ''));
 
@@ -109,8 +115,8 @@ function inscrire($pdo) {
     if (mb_strlen($nom) > 100 || mb_strlen($prenom) > 100) {
         jsonResponse(['error' => 'Nom ou prenom trop long (100 caracteres maximum)'], 400);
     }
-    if (strlen($password) < 6) {
-        jsonResponse(['error' => 'Le mot de passe doit contenir au moins 6 caracteres'], 400);
+    if (strlen($password) < 8) {
+        jsonResponse(['error' => 'Le mot de passe doit contenir au moins 8 caracteres'], 400);
     }
     if (strlen($password) > 200) {
         jsonResponse(['error' => 'Mot de passe trop long (200 caracteres maximum)'], 400);

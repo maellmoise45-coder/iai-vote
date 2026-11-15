@@ -55,6 +55,9 @@ switch ($method) {
  * Une seule session active par compte (connexion unique).
  */
 function handleLogin($pdo, $data) {
+    // Limitation par IP (defense en profondeur) en plus du suivi par matricule.
+    limiterRequetes('login', 30, 60, null);
+
     $matricule = trim($data['matricule'] ?? '');
     $password  = $data['mot_de_passe'] ?? ($data['password'] ?? '');
 
@@ -143,8 +146,11 @@ function handleChangePassword($pdo, $data) {
     if ($ancien === '' || $nouveau === '') {
         jsonResponse(['error' => 'Ancien et nouveau mot de passe requis'], 400);
     }
-    if (strlen($nouveau) < 6) {
-        jsonResponse(['error' => 'Le nouveau mot de passe doit contenir au moins 6 caracteres'], 400);
+    if (strlen($nouveau) < 8) {
+        jsonResponse(['error' => 'Le nouveau mot de passe doit contenir au moins 8 caracteres'], 400);
+    }
+    if (strlen($nouveau) > 200) {
+        jsonResponse(['error' => 'Mot de passe trop long (200 caracteres maximum)'], 400);
     }
 
     $stmt = $pdo->prepare("SELECT mot_de_passe, matricule FROM utilisateurs WHERE id = ?");

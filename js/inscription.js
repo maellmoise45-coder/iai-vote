@@ -81,8 +81,8 @@ form.addEventListener('submit', async (e) => {
         afficherMessage('message', 'Matricule, prénom et nom sont obligatoires.', 'erreur');
         return;
     }
-    if (motDePasse.length < 6) {
-        afficherMessage('message', 'Le mot de passe doit contenir au moins 6 caractères.', 'erreur');
+    if (motDePasse.length < 8) {
+        afficherMessage('message', 'Le mot de passe doit contenir au moins 8 caractères.', 'erreur');
         return;
     }
     if (motDePasse !== confirmation) {

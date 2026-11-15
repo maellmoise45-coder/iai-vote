@@ -176,8 +176,11 @@ function createUtilisateur($pdo, $user) {
     if (mb_strlen($nom) > 100 || mb_strlen($prenom) > 100) {
         jsonResponse(['error' => 'Nom ou prenom trop long (100 caracteres maximum)'], 400);
     }
-    if (strlen($password) < 6) {
-        jsonResponse(['error' => 'Le mot de passe doit contenir au moins 6 caracteres'], 400);
+    if (strlen($password) < 8) {
+        jsonResponse(['error' => 'Le mot de passe doit contenir au moins 8 caracteres'], 400);
+    }
+    if (strlen($password) > 200) {
+        jsonResponse(['error' => 'Mot de passe trop long (200 caracteres maximum)'], 400);
     }
     if (!in_array($role, ['electeur', 'gestionnaire', 'admin', 'controleur'], true)) {
         jsonResponse(['error' => 'Role invalide'], 400);
@@ -255,8 +258,11 @@ function updateUtilisateur($pdo, $user) {
 
     // Mot de passe : reinitialisation eventuelle
     if (!empty($data['mot_de_passe'])) {
-        if (strlen($data['mot_de_passe']) < 6) {
-            jsonResponse(['error' => 'Le mot de passe doit contenir au moins 6 caracteres'], 400);
+        if (strlen($data['mot_de_passe']) < 8) {
+            jsonResponse(['error' => 'Le mot de passe doit contenir au moins 8 caracteres'], 400);
+        }
+        if (strlen($data['mot_de_passe']) > 200) {
+            jsonResponse(['error' => 'Mot de passe trop long (200 caracteres maximum)'], 400);
         }
         $pdo->prepare("UPDATE utilisateurs SET mot_de_passe = ? WHERE id = ?")
             ->execute([password_hash($data['mot_de_passe'], PASSWORD_DEFAULT), $id]);

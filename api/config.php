@@ -820,7 +820,11 @@ function validerPhoto($valeur) {
     if ($v === '') {
         return null;
     }
+    // Image embarquee (redimensionnee cote navigateur) : taille bornee.
     if (preg_match('#^data:image/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]+$#i', $v)) {
+        if (strlen($v) > 500000) {
+            return null;
+        }
         return $v;
     }
     if (preg_match('#^https?://#i', $v) && mb_strlen($v) <= 1000) {

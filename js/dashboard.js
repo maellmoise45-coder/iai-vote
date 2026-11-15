@@ -382,16 +382,16 @@ function modaleMonMotDePasse() {
         <div class="champ"><label>Mot de passe actuel</label>
             <input type="password" name="old_password" required autocomplete="current-password"></div>
         <div class="champ"><label>Nouveau mot de passe</label>
-            <input type="password" name="new_password" required minlength="6" autocomplete="new-password"></div>
+            <input type="password" name="new_password" required minlength="8" autocomplete="new-password"></div>
         <div class="champ"><label>Confirmer le nouveau mot de passe</label>
-            <input type="password" name="confirmation" required autocomplete="new-password"></div>`;
+            <input type="password" name="confirmation" required minlength="8" autocomplete="new-password"></div>`;
 
     ouvrirModale('Changer mon mot de passe', champs, async (fd) => {
         const ancien = fd.get('old_password');
         const nouveau = fd.get('new_password');
         const confirmation = fd.get('confirmation');
 
-        if (nouveau.length < 6) return 'Le nouveau mot de passe doit contenir au moins 6 caractères.';
+        if (nouveau.length < 8) return 'Le nouveau mot de passe doit contenir au moins 8 caractères.';
         if (nouveau !== confirmation) return 'Les deux mots de passe ne correspondent pas.';
 
         const rep = await API.post('auth.php', {
@@ -799,7 +799,7 @@ function modaleCompte(compte, role) {
         <div class="champ"><label>Zone / classe (ex : L3 Informatique)</label>
             <input name="zone" value="${echapper(c.zone || '')}" placeholder="ex : Amphi A, L3 Info…"></div>
         ${compte ? '' : `<div class="champ"><label>Mot de passe</label>
-            <input type="text" name="mot_de_passe" required placeholder="min. 6 caractères"></div>`}
+            <input type="text" name="mot_de_passe" required placeholder="min. 8 caractères"></div>`}
         <div class="champ"><label>Statut</label>
             <select name="actif"><option value="true" ${c.actif !== false ? 'selected' : ''}>Actif</option>
             <option value="false" ${c.actif === false ? 'selected' : ''}>Inactif</option></select></div>`;
@@ -837,7 +837,7 @@ function modaleCompte(compte, role) {
 
 function modaleMotDePasse(compte) {
     const champs = `<div class="champ"><label>Nouveau mot de passe pour ${echapper(compte.matricule)}</label>
-        <input type="text" name="mot_de_passe" required placeholder="min. 6 caractères"></div>`;
+        <input type="text" name="mot_de_passe" required placeholder="min. 8 caractères"></div>`;
     ouvrirModale('Réinitialiser le mot de passe', champs, async (fd) => {
         const rep = await API.put('electeurs.php', { id: compte.id, mot_de_passe: fd.get('mot_de_passe') });
         if (!rep.ok || !rep.data.success) return rep.data.error || 'Erreur.';

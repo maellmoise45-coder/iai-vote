@@ -39,6 +39,8 @@ switch ($method) {
     case 'POST':
         $user = getAuthUser($pdo);
         exigerRole($user, ['electeur']);
+        // Limitation par utilisateur (protection contre abus).
+        limiterRequetes('vote', 60, 60, 'u' . (int)$user['user_id']);
         $data = getJsonBody();
         if (($data['action'] ?? '') === 'expirer') {
             expirerVote($pdo, $user, $data);
