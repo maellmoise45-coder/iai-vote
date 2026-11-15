@@ -24,7 +24,9 @@ const DUREE_VOTE = 60;      // valeur par défaut si le serveur ne répond pas
 const chronoExpire = {};    // electionId -> true quand le temps est écoulé
 let minuteries = [];        // intervalles du chrono en cours
 let expulsionEnCours = false;
-let liveMinuteries = [];    // intervalles du suivi en direct après vote
+let liveRafraichisseurs = []; // fonctions de rafraîchissement du direct
+let rechargementEnCours = false;
+let pagePrete = false;
 
 if (user) {
     document.getElementById('entete-user').innerHTML =
@@ -58,12 +60,21 @@ async function expulser(electionId) {
 }
 
 function arreterSuiviLive() {
-    liveMinuteries.forEach(clearInterval);
-    liveMinuteries = [];
+    liveRafraichisseurs = [];
 }
 
 /* ---------- Chargement des élections ouvertes ---------- */
 async function chargerElections() {
+    if (rechargementEnCours) return;
+    rechargementEnCours = true;
+    try {
+        await chargerElectionsInterne();
+    } finally {
+        rechargementEnCours = false;
+    }
+}
+
+async function chargerElectionsInterne() {
     const zone = document.getElementById('zone-contenu');
     const { ok, data } = await API.get('elections.php');
 
@@ -233,7 +244,7 @@ function demarrerResultatsLive(election, zone) {
         zone.innerHTML = `
             <div class="live-bandeau">
                 <span><span class="live-point"></span>
-                    <b>Résultats en direct</b> — actualisation toutes les 5 s</span>
+                    <b>Résultats en direct</b> — mise à jour automatique</span>
                 <span>↻ ${heure}</span>
             </div>
             ${Graphe.rendre(candidats, {
@@ -245,12 +256,11 @@ function demarrerResultatsLive(election, zone) {
         `;
     }
 
+    liveRafraichisseurs.push(rafraichir);
+
     (async () => {
         await chargerMeta();
         await rafraichir();
-        if (!actif) return;
-        const minuterie = setInterval(rafraichir, 5000);
-        liveMinuteries.push(minuterie);
     })();
 
     // Arrêt propre si la carte est retirée du document.
@@ -258,6 +268,7 @@ function demarrerResultatsLive(election, zone) {
         if (!zone.isConnected) {
             actif = false;
             observateur.disconnect();
+            liveRafraichisseurs = liveRafraichisseurs.filter(f => f !== rafraichir);
         }
     });
     observateur.observe(document.body, { childList: true, subtree: true });
@@ -435,5 +446,28 @@ document.getElementById('btn-confirmer').addEventListener('click', async () => {
     chargerElections();
 });
 
+/* ---------- Temps réel ---------- */
+async function surChangementVote() {
+    if (!pagePrete || expulsionEnCours || rechargementEnCours) return;
+    if (!document.getElementById('modale').classList.contains('cache')) return;
+    if (!document.getElementById('modale-nul').classList.contains('cache')) return;
+
+    // Après le vote : on actualise les résultats en direct affichés.
+    const vivants = liveRafraichisseurs.slice();
+    if (vivants.length) {
+        await Promise.all(vivants.map(f => f()));
+        return;
+    }
+
+    // Aucun direct affiché : ne pas interrompre un électeur en train de
+    // choisir (chrono actif). Si la page est vide, on recharge la liste
+    // pour faire apparaître une élection qui vient d'ouvrir.
+    if (document.querySelector('.chrono')) return;
+    await chargerElections();
+}
+
 // Démarrage
-if (user) chargerElections();
+if (user) {
+    TempsReel.demarrer({ intervalle: 4000, callback: surChangementVote });
+    chargerElections().finally(() => { pagePrete = true; });
+}

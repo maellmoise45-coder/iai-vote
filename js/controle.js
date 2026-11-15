@@ -49,17 +49,26 @@ function afficherVue() {
 }
 
 /* ---------- Journal d'audit ---------- */
-async function chargerJournal() {
+async function chargerJournal(silencieux = false) {
     const conteneur = document.getElementById('vue-journal');
-    conteneur.innerHTML = '<div class="carte"><p class="vide">Chargement du journal…</p></div>';
+    if (!silencieux) {
+        conteneur.innerHTML = '<div class="carte"><p class="vide">Chargement du journal…</p></div>';
+    }
 
     const { ok, data } = await API.get('journal.php?limite=200');
     if (!ok || !data.success) {
+        if (silencieux) return;
         conteneur.innerHTML = `<div class="carte"><p class="vide">${echapper(data.error || 'Journal indisponible.')}</p></div>`;
         return;
     }
 
     const lignes = data.data || [];
+
+    // Rien n'a changé : on ne reconstruit pas le tableau.
+    const signature = lignes.map(l => l.id).join(',');
+    if (silencieux && conteneur.dataset.signature === signature) return;
+    conteneur.dataset.signature = signature;
+
     let html = `<div class="carte"><div class="carte-titre">Journal des actions</div>`;
     if (lignes.length === 0) {
         html += `<p class="vide">Aucune action enregistrée.</p>`;
@@ -81,5 +90,19 @@ async function chargerJournal() {
     conteneur.innerHTML = html;
 }
 
+/* ---------- Temps réel ---------- */
+async function rafraichirSilencieux() {
+    if (vueActive === 'suivi') {
+        Suivi.rafraichir();
+        return;
+    }
+    if (vueActive === 'journal') {
+        await chargerJournal(true);
+    }
+}
+
 /* ---------- Démarrage ---------- */
-if (user) afficherVue();
+if (user) {
+    afficherVue();
+    TempsReel.demarrer({ intervalle: 5000, callback: rafraichirSilencieux });
+}

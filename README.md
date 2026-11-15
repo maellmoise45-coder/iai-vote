@@ -1,17 +1,16 @@
-# Digital-Elect V1.3
+# Digital-Elect V1.4
 
 Application de **vote électronique** pour une école : les étudiants votent avec
 leur **matricule**, un **seul vote par matricule et par élection**, et les
 bulletins sont **anonymes**.
 
-> Version **1.3** : les **élections de classe**. Le délégué organise un scrutin
-> pour sa classe (élection du délégué, du bureau, etc.) ; seuls lui et les
-> étudiants de la classe voient l'élection et ses résultats, toujours avec les
-> photos des candidats.
+> Version **1.4** : le site est **dynamique en temps réel** (plus besoin de
+> rafraîchir pour voir les résultats et l'activité), avec une **sauvegarde
+> automatique** de la base et un **miroir local** sécurisé de la base en ligne
+> sur la machine, en lecture seule.
 >
-> La V1.2 avait apporté l'audit sécurité complet, la limitation des tentatives
-> de connexion, l'installation protégée par jeton, les **liens d'inscription par
-> classe** et le **diagramme à bandes** avec résultats en direct après le vote.
+> La V1.3 avait apporté les **élections de classe** (le délégué organise pour sa
+> classe, résultats visibles uniquement par la classe avec photos des candidats).
 
 ## Liens
 
@@ -78,8 +77,15 @@ bulletins sont **anonymes**.
   ouvre une confirmation. Le bulletin est comptabilisé comme nul (`candidat_id
   NULL`), sans donner de voix à un candidat ; l'électeur reste connecté et voit
   le direct. Le nul **chrono** (temps écoulé) reste inchangé et déconnecte.
+- **Temps réel sans rafraîchissement manuel** : les pages (tableau de bord,
+  résultats publics/privés, suivi live, espace électeur, journal contrôleur) se
+  mettent à jour automatiquement. Un moteur léger (`js/temps-reel.js`) interroge
+  `api/sync.php` qui renvoie uniquement une **empreinte** calculée dans le
+  périmètre de l'utilisateur ; les données ne sont rechargées que si l'empreinte
+  change. L'onglet masqué est mis en pause et se resynchronise au retour,
+  avec temporisation progressive en cas d'erreur réseau.
 - **Résultats en direct après le vote** : pendant un scrutin `en_cours`, un
-  électeur qui a déjà voté voit le diagramme se rafraîchir toutes les 5 secondes
+  électeur qui a déjà voté voit le diagramme se mettre à jour en temps réel
   (l'API `resultats.php` vérifie le bulletin via `hash_vote`). Avant le vote,
   l'accès reste refusé. Les photos sont téléchargées une seule fois puis
   réutilisées : seuls les compteurs sont redemandés (`compact=1`).
@@ -99,13 +105,27 @@ bulletins sont **anonymes**.
 - **Suivi live par zone** (admin et contrôleurs ; pour les contrôleurs,
   élections générales uniquement) : inscrits, votants et taux de participation
   par amphi/salle, avec le même diagramme à bandes.
+- **Sauvegarde automatique sécurisée** : l'API `api/sauvegarde.php` (admin
+  uniquement) produit un instantané JSON complet de la base (hors sessions). En
+  production le fichier est écrit **hors de la racine web** ; en local il est
+  stocké dans `sauvegardes/` protégé par `.htaccess` (refus d'accès web). Noms
+  aléatoires, droits `0600`, rotation (14 fichiers), téléchargement authentifié.
+  L'onglet **Sauvegarde** du tableau de bord déclenche aussi une sauvegarde
+  automatique si la dernière date de plus de 24 h.
+- **Miroir local de la base en ligne** : `outils/miroir-local.php` (CLI) se
+  connecte à PostgreSQL de production en **lecture seule** (`default_transaction_read_only`),
+  copie les données dans la base locale `iai_vote` en transaction, puis écrit un
+  instantané JSON local. La base en ligne n'est **jamais modifiée**. Identifiants
+  dans `outils/miroir.local.php` (ignoré par Git). Tâche planifiée fournie
+  (toutes les 3 h, reprise si la machine était éteinte) et lancement manuel via
+  `sauvegarder-local.bat`.
 - **Interface responsive** : palette bleue, logo Digital-Elect, favicon,
   tableaux maîtrisés sur mobile, mention « Créé par MOISE ».
 
 ## Arborescence
 
 ```
-Digital-Elect.V1.3/
+Digital-Elect/
 ├── index.html                 Page de connexion
 ├── vote.html                  Espace électeur (vote)
 ├── dashboard.html             Espace admin / délégué de classe
@@ -118,9 +138,10 @@ Digital-Elect.V1.3/
 │   └── favicon.svg
 ├── js/
 │   ├── api.js                 Socle (appels API, jeton, session)
+│   ├── temps-reel.js          Moteur de synchronisation temps réel
 │   ├── login.js
 │   ├── vote.js                Chrono + vote + direct après vote
-│   ├── dashboard.js           Admin / délégué de classe
+│   ├── dashboard.js           Admin / délégué de classe (+ sauvegarde)
 │   ├── suivi.js               Suivi live partagé
 │   ├── controle.js            Espace contrôleur
 │   ├── resultats.js           Résultats publics + direct
@@ -129,6 +150,8 @@ Digital-Elect.V1.3/
 ├── api/
 │   ├── config.php             Configuration PDO + helpers sécurité
 │   ├── config.local.example.php   Modèle de configuration locale
+│   ├── sync.php               Empreinte de synchronisation temps réel
+│   ├── sauvegarde.php         Sauvegarde JSON (admin, hors web)
 │   ├── auth.php               Connexion / déconnexion / mot de passe
 │   ├── electeurs.php          Gestion des comptes (règles par rôle)
 │   ├── invitations.php        Liens d'inscription par classe
@@ -141,13 +164,21 @@ Digital-Elect.V1.3/
 │   ├── suivi.php              Participation par zone + live
 │   ├── journal.php
 │   ├── install.php            Création initiale (protégée par jeton)
+│   ├── cache/                 Compteurs de limitation (protégé .htaccess)
 │   └── .htaccess              Protection config + transmission Authorization
+├── outils/
+│   ├── miroir-local.php       Copie production → local (lecture seule, CLI)
+│   ├── miroir.local.example.php  Modèle d'identifiants (à copier)
+│   ├── planifier-miroir.ps1   Crée la tâche planifiée (toutes les 3 h)
+│   └── supprimer-tache-miroir.ps1
+├── sauvegardes/               Sauvegardes/instantanés locaux (protégé .htaccess)
 ├── database/
 │   ├── schema.sql             Schéma PostgreSQL complet
 │   ├── migration_v2.sql       V1 → V2 (contrôleur, zones, émargements)
 │   ├── migration_v3_securite.sql  V2 → V3 (index anti-force brute)
 │   ├── migration_v4_invitations.sql  V3 → V4 (liens de classe)
 │   └── migration_v5_elections_classe.sql  V4 → V5 (élections de classe)
+├── sauvegarder-local.bat      Lancement manuel du miroir local
 ├── .htaccess                  En-têtes de sécurité + CSP
 ├── .env.example               Variables d'environnement (modèle)
 ├── Dockerfile

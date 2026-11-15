@@ -1,6 +1,6 @@
 # Guide de déploiement — alwaysdata (solution retenue)
 
-> **Application : Digital-Elect V1.3**
+> **Application : Digital-Elect V1.4**
 > **En ligne :** https://digitalelect.alwaysdata.net
 
 alwaysdata est un hébergeur **français**, avec une offre **gratuite à vie,
@@ -47,29 +47,31 @@ sans carte bancaire**, qui fournit du **PHP** et du **PostgreSQL**.
    double vote `409`, vote nul, clôture protégée, publication des résultats,
    anonymat, en-têtes de sécurité.
 
+### Nouveautés V1.4 (temps réel + sauvegardes)
+
+- **Temps réel sans rafraîchissement** : tableaux de bord, résultats, suivi,
+  journal et espace électeur se mettent à jour automatiquement via `api/sync.php`
+  (empreinte légère, scoped par rôle/classe, aucun compteur exposé). Pas de
+  WebSocket/SSE, compatible hébergement mutualisé.
+- **Sauvegarde de la base** (admin) : onglet « Sauvegarde » + `api/sauvegarde.php`.
+  Instantané JSON complet (hors sessions), créé automatiquement si le dernier
+  date de plus de 24 h, téléchargeable. Sur alwaysdata, le fichier est écrit
+  **hors de `/www`** (dossier personnel du compte), donc inaccessible depuis
+  Internet. Noms aléatoires, droits `0600`, rotation (14 fichiers).
+- **Miroir local sécurisé** : depuis votre PC, `outils/miroir-local.php` copie la
+  base de production vers PostgreSQL local en **lecture seule** (la production ne
+  peut jamais être modifiée). Identifiants dans `outils/miroir.local.php` (non
+  versionné). Tâche planifiée toutes les 3 h (reprise au démarrage) :
+  `outils/planifier-miroir.ps1`.
+
 ### Nouveautés V1.3 (élections de classe)
 
 - Le **délégué de classe** peut organiser un scrutin **pour sa classe** :
   élection du délégué, du bureau, d'un responsable, etc.
 - La zone (classe) est **forcée par le serveur** à la création et n'est plus
-  modifiable : impossible de créer une élection pour une autre classe.
-- L'élection, ses candidats et ses résultats ne sont visibles que par **le
-  délégué et les étudiants de la classe**. Les autres reçoivent `404`/`403`.
-- Les résultats conservent le **diagramme à bandes avec les photos** ; la
-  publication est explicite et limitée à la classe. L'admin voit tout.
-
-### Nouveautés V1.2 (liens de classe + direct)
-
-- Le **délégué de classe** ne crée et ne modifie plus de profils : il consulte
-  les élèves de sa zone et peut retirer un intrus. Il génère le **lien
-  d'inscription** de sa classe.
-- Les étudiants s'inscrivent eux-mêmes via `inscription.html?token=…` : la
-  classe portée par le lien est imposée et non modifiable.
-- Les résultats s'affichent en **diagramme à bandes** (axe gradué, grille
-  horizontale, barres pleines) et, après avoir voté, l'électeur voit le
-  **direct** (rafraîchissement toutes les 5 s).
-- Le vote propose un **bouton « Voter nul (bulletin blanc) »** avec confirmation.
-  Le bulletin nul apparaît en gris dans le diagramme et dans le suivi live.
+  modifiable ; l'élection et ses résultats ne sont visibles que par le délégué
+  et les étudiants de la classe. Les résultats gardent le diagramme à bandes
+  avec photos. L'admin voit tout.
 
 ---
 
@@ -117,9 +119,15 @@ curl --ssl-reqd --ftp-create-dirs -T index.html \
 **Avec FileZilla (interface graphique) :** protocole **FTPS – TLS implicite**,
 port **990**.
 
-> 🔒 Ne transférez jamais `api/config.local.php` depuis un dépôt public : créez-le
-> directement sur le serveur. Il est exclu de Git (`.gitignore`) et de l'image
-> Docker (`.dockerignore`).
+> 🔒 Ne transférez jamais `api/config.local.php` ni `outils/miroir.local.php`
+> depuis un dépôt public : créez-les directement sur la machine concernée. Ils
+> sont exclus de Git (`.gitignore`).
+>
+> Pour la V1.4, envoyez aussi `api/sync.php`, `api/sauvegarde.php`,
+> `api/cache/.htaccess`, `sauvegardes/.htaccess` et `js/temps-reel.js`, ainsi que
+> les pages HTML/CSS/JS mises à jour (assets `?v=10`). Le dossier `outils/` ne
+> doit **pas** être déployé sur le serveur web (il sert uniquement sur votre
+> machine pour le miroir local).
 
 ---
 

@@ -1,0 +1,3 @@
+# Sauvegardes locales : donnees sensibles, aucun acces web.
+Require all denied
+Options -Indexes

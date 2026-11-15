@@ -1,36 +1,45 @@
 /* ============================================================
    Page des résultats — Digital-Elect
    ------------------------------------------------------------
-   Diagramme en bandes (Graphe). Si le scrutin est en cours et
-   que l'utilisateur est connecté, les résultats se rafraîchissent
-   toutes les 5 secondes. Les électeurs doivent avoir voté pour
-   accéder au direct (contrôle côté serveur).
+   Diagramme en bandes (Graphe). Les résultats se mettent à jour
+   tout seuls : la page interroge une empreinte légère
+   (/api/sync.php) et ne recharge les données que si quelque
+   chose a changé. Aucun rafraîchissement manuel n'est nécessaire.
+   Les électeurs doivent avoir voté pour accéder au direct
+   (contrôle côté serveur).
    ============================================================ */
 
 let elections = [];
-let liveMinuteur = null;
 let metaCandidats = new Map();
+let metaElectionId = null;
+let signatureListe = '';
+let intervalleActuel = 0;
 
-function arreterLive() {
-    if (liveMinuteur) {
-        clearInterval(liveMinuteur);
-        liveMinuteur = null;
-    }
-}
-
-async function chargerElections() {
-    const { data } = await API.get('elections.php');
-    const select = document.getElementById('select-election');
-    const utilisateur = API.getUser();
-    const peutVoirDirect = !!utilisateur;
-
-    elections = (data.data || []).filter(e =>
+/* ---------- Liste des élections visibles ---------- */
+function electionsVisibles(liste) {
+    const connecte = !!API.getUser();
+    return (liste || []).filter(e =>
         e.resultats_publics
         || e.statut === 'publiee'
-        || (peutVoirDirect && e.statut === 'en_cours')
+        || (connecte && e.statut === 'en_cours')
     );
+}
+
+async function chargerElections(silencieux = false) {
+    const { ok, data } = await API.get('elections.php');
+    if (!ok || !data.success) {
+        if (!silencieux) {
+            document.getElementById('zone-resultats').innerHTML =
+                `<div class="carte"><p class="vide">${echapper(data.error || 'Liste indisponible.')}</p></div>`;
+        }
+        return;
+    }
+
+    elections = electionsVisibles(data.data);
+    const select = document.getElementById('select-election');
 
     if (elections.length === 0) {
+        signatureListe = '';
         select.innerHTML = '<option>Aucun résultat disponible</option>';
         document.getElementById('zone-resultats').innerHTML =
             `<div class="carte"><p class="vide">Aucun résultat n'est encore publié.
@@ -38,16 +47,29 @@ async function chargerElections() {
         return;
     }
 
-    select.innerHTML = elections.map(e =>
-        `<option value="${e.id}">${echapper(e.titre)}${
-            e.zone ? ' — classe ' + echapper(e.zone) : ''
-        }${e.statut === 'en_cours' ? ' — en direct' : ''}</option>`
-    ).join('');
+    const signature = elections
+        .map(e => `${e.id}:${e.statut}:${e.resultats_publics ? 1 : 0}`)
+        .join('|');
 
-    select.addEventListener('change', () => chargerResultats(select.value));
-    chargerResultats(elections[0].id);
+    if (signature !== signatureListe) {
+        signatureListe = signature;
+        const choixActuel = select.value;
+        select.innerHTML = elections.map(e =>
+            `<option value="${e.id}">${echapper(e.titre)}${
+                e.zone ? ' — classe ' + echapper(e.zone) : ''
+            }${e.statut === 'en_cours' ? ' — en direct' : ''}</option>`
+        ).join('');
+        if (elections.some(e => String(e.id) === String(choixActuel))) {
+            select.value = choixActuel;
+        }
+    }
+
+    const cible = select.value || elections[0].id;
+    await chargerResultats(cible, silencieux);
+    ajusterCadence();
 }
 
+/* ---------- Détail d'une élection ---------- */
 function completerCandidats(candidats) {
     return (candidats || []).map(c => {
         const m = metaCandidats.get(Number(c.id)) || {};
@@ -92,22 +114,28 @@ function rendreResultats(data) {
     }
 
     if (enDirect) {
-        html += `<p class="graphe-note">Mise à jour automatique toutes les 5 secondes.</p>`;
+        html += `<p class="graphe-note">Mise à jour automatique en temps réel.</p>`;
     }
 
     html += `</div>`;
     return html;
 }
 
-async function chargerResultats(electionId) {
+async function chargerResultats(electionId, silencieux = false) {
     const zone = document.getElementById('zone-resultats');
-    const estDirect = elections.some(e => String(e.id) === String(electionId) && e.statut === 'en_cours');
+    const compact = silencieux && String(metaElectionId) === String(electionId);
 
-    arreterLive();
-    zone.innerHTML = '<div class="carte"><p class="vide">Chargement…</p></div>';
+    if (!silencieux) {
+        zone.innerHTML = '<div class="carte"><p class="vide">Chargement…</p></div>';
+    }
 
-    const { ok, data } = await API.get('resultats.php?election_id=' + encodeURIComponent(electionId));
+    const { ok, data } = await API.get(
+        'resultats.php?election_id=' + encodeURIComponent(electionId)
+        + (compact ? '&compact=1' : '')
+    );
+
     if (!ok || !data.success) {
+        if (silencieux) return; // on conserve le dernier affichage
         const utilisateur = API.getUser();
         const lienVote = utilisateur && utilisateur.role === 'electeur'
             ? `<p style="text-align:center; margin-top:12px;">
@@ -121,41 +149,34 @@ async function chargerResultats(electionId) {
         return;
     }
 
-    // Mémorise photos/programmes pour les rafraîchissements compacts.
-    metaCandidats = new Map(
-        (data.candidats || []).map(c => [Number(c.id), c])
-    );
+    if (!compact) {
+        metaCandidats = new Map((data.candidats || []).map(c => [Number(c.id), c]));
+        metaElectionId = Number(electionId);
+    }
 
     zone.innerHTML = rendreResultats(data);
-
-    if (estDirect && API.getUser()) {
-        liveMinuteur = setInterval(() => rafraichirDirect(electionId), 5000);
-    }
 }
 
-async function rafraichirDirect(electionId) {
-    const zone = document.getElementById('zone-resultats');
-    if (!zone || !document.body.contains(zone)) {
-        arreterLive();
-        return;
-    }
-
-    const { ok, data } = await API.get(
-        `resultats.php?election_id=${encodeURIComponent(electionId)}&compact=1`
-    );
-    if (!ok || !data.success) return; // on conserve le dernier affichage
-
-    zone.innerHTML = rendreResultats(data);
-
-    // Le scrutin vient de se terminer : on arrête le direct.
-    if (data.election.statut !== 'en_cours') {
-        arreterLive();
-    }
+/* ---------- Temps réel ---------- */
+function ajusterCadence() {
+    const enDirect = elections.some(e => e.statut === 'en_cours');
+    const souhaite = enDirect ? 4000 : 15000;
+    if (souhaite === intervalleActuel) return;
+    intervalleActuel = souhaite;
+    TempsReel.changerIntervalle(souhaite);
 }
 
-// Recharger les métadonnées (photos) si le direct dure longtemps :
-// elles ne changent pas, inutile de les redemander à chaque cycle.
+async function rafraichirPage() {
+    if (document.hidden) return;
+    await chargerElections(true);
+}
 
-window.addEventListener('beforeunload', arreterLive);
+/* ---------- Démarrage ---------- */
+document.getElementById('select-election').addEventListener('change', (e) => {
+    if (e.target.value) chargerResultats(e.target.value, false);
+});
 
-chargerElections();
+(async () => {
+    await chargerElections(false);
+    TempsReel.demarrer({ intervalle: intervalleActuel || 4000, callback: rafraichirPage });
+})();

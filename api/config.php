@@ -81,6 +81,7 @@ define('DB_SSLMODE', $dbSslMode);
 // Secret servant a signer les jetons ET a calculer le hash anonyme
 // des votes. En production, definir la variable d'environnement APP_SECRET.
 define('APP_NAME', 'Digital-Elect');
+define('APP_VERSION', '1.4');
 define('JWT_SECRET', $env('APP_SECRET', 'iai-vote-secret-a-changer-en-production-2025'));
 
 // Jeton exige par api/install.php. Volontairement SANS valeur par defaut :
@@ -625,6 +626,87 @@ function reinitialiserTentatives($pdo, $matricule) {
         )->execute([$ip, $matricule]);
     } catch (Exception $e) {
         error_log('[DigitalElect] throttle reset: ' . $e->getMessage());
+    }
+}
+
+/* ------------------------------------------------------------
+   LIMITATION GENERIQUE DE REQUETES
+   ------------------------------------------------------------
+   Compteur par fenetre glissante, stocke dans des petits
+   fichiers verrouilles (api/cache, interdit au web). Sert a
+   proteger les endpoints appeles automatiquement (synchro
+   temps reel, sauvegardes) sans ecrire dans la base a chaque
+   requete. Si le dossier n'est pas accessible en ecriture, la
+   limitation est simplement ignoree : l'application continue
+   de fonctionner.
+
+   $sujet permet de compter par utilisateur (jeton) plutot que
+   par adresse IP, utile derriere un meme routeur.
+   ------------------------------------------------------------ */
+function limiterRequetes($nom, $max, $fenetre, $sujet = null) {
+    static $verifie = [];
+
+    $ip    = $_SERVER['REMOTE_ADDR'] ?? 'inconnu';
+    $sujet = $sujet !== null ? (string)$sujet : $ip;
+    $cle   = hash('sha256', $nom . '|' . $sujet);
+    $dossier = __DIR__ . '/cache';
+
+    if (!is_dir($dossier)) {
+        @mkdir($dossier, 0700, true);
+    }
+    if (!is_dir($dossier) || !is_writable($dossier)) {
+        return; // pas de stockage : on ne bloque pas le service
+    }
+
+    $fichier = $dossier . '/rl_' . $cle . '.json';
+    $fp = @fopen($fichier, 'c+');
+    if (!$fp) {
+        return;
+    }
+
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return;
+    }
+
+    $contenu = stream_get_contents($fp);
+    $etat = json_decode((string)$contenu, true);
+    if (!is_array($etat) || !isset($etat['debut'], $etat['n'])) {
+        $etat = ['debut' => time(), 'n' => 0];
+    }
+
+    $maintenant = time();
+    if (($maintenant - (int)$etat['debut']) >= $fenetre) {
+        $etat = ['debut' => $maintenant, 'n' => 0];
+    }
+
+    $etat['n'] = (int)$etat['n'] + 1;
+
+    if ($etat['n'] > $max) {
+        $attente = max(1, $fenetre - ($maintenant - (int)$etat['debut']));
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        header('Retry-After: ' . $attente);
+        jsonResponse([
+            'error' => 'Trop de requetes. Reessayez dans quelques instants.'
+        ], 429);
+    }
+
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($etat));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+
+    // Menage occasionnel des compteurs inactifs (1 chance sur 200).
+    if (!isset($verifie[$nom]) && random_int(1, 200) === 1) {
+        $verifie[$nom] = true;
+        foreach (glob($dossier . '/rl_*.json') ?: [] as $ancien) {
+            if (@filemtime($ancien) < time() - 3600) {
+                @unlink($ancien);
+            }
+        }
     }
 }
 

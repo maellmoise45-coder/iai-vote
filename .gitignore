@@ -20,3 +20,17 @@ Thumbs.db
 
 # Serveur PostgreSQL portable (si present par erreur dans le dossier)
 pgsql/
+
+# Sauvegardes locales (donnees sensibles, jamais versionnees)
+sauvegardes/*
+!sauvegardes/.htaccess
+
+# Identifiants du miroir local (production -> PostgreSQL local)
+outils/miroir.local.php
+outils/*.log
+outils/*.log.old
+outils/*.lock
+
+# Compteurs de limitation de requetes (recrees automatiquement)
+api/cache/*
+!api/cache/.htaccess

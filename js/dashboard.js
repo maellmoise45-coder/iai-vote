@@ -7,6 +7,9 @@
        retirer un intrus de sa liste ;
      - il génère le lien d'inscription de sa classe ;
      - les résultats s'affichent en diagramme en bandes.
+   V1.4 :
+     - mise à jour automatique (temps réel) via /api/sync.php ;
+     - onglet Sauvegarde réservé à l'administrateur.
    ============================================================ */
 
 const user = protegerPage(['admin', 'gestionnaire']);
@@ -29,7 +32,7 @@ if (user) {
     // Le délégué gère les élections de sa classe, sa liste d'élèves
     // et le lien d'inscription de la classe.
     if (!estAdmin) {
-        ['onglet-gestionnaires', 'onglet-controleurs', 'onglet-suivi', 'onglet-journal']
+        ['onglet-gestionnaires', 'onglet-controleurs', 'onglet-suivi', 'onglet-journal', 'onglet-sauvegarde']
             .forEach(id => document.getElementById(id)?.remove());
 
         const ongletElections = document.getElementById('onglet-elections');
@@ -98,25 +101,52 @@ document.getElementById('onglets').addEventListener('click', (e) => {
     afficherVue();
 });
 
-function afficherVue() {
-    Suivi.arreter(); // arrête un éventuel rafraîchissement live précédent
-
+function afficherVue(silencieux = false) {
     const vue = document.getElementById('vue');
-    vue.innerHTML = '<div class="carte"><p class="vide">Chargement…</p></div>';
 
     // Sécurité côté client : un gestionnaire n'a pas accès aux vues
-    // globales (délégués, contrôleurs, suivi, journal).
+    // globales (délégués, contrôleurs, suivi, journal, sauvegarde).
     if (!estAdmin && !['elections', 'electeurs', 'invitation'].includes(vueActive)) {
         vueActive = 'elections';
     }
 
-    if (vueActive === 'elections') vueElections(vue);
-    else if (vueActive === 'electeurs') vueComptes(vue, 'electeur');
-    else if (vueActive === 'gestionnaires') vueComptes(vue, 'gestionnaire');
-    else if (vueActive === 'controleurs') vueComptes(vue, 'controleur');
-    else if (vueActive === 'invitation') vueInvitation(vue);
+    if (silencieux) {
+        // Le suivi live a son propre rafraîchissement compact.
+        if (vueActive === 'suivi') {
+            Suivi.rafraichir();
+            return;
+        }
+        // Ne jamais interrompre une saisie en cours (recherche, filtre).
+        const actif = document.activeElement;
+        if (actif && actif.closest && actif.closest('#vue')
+            && ['INPUT', 'SELECT', 'TEXTAREA'].includes(actif.tagName)) {
+            return;
+        }
+    } else {
+        Suivi.arreter(); // arrête un éventuel rafraîchissement live précédent
+        vue.innerHTML = '<div class="carte"><p class="vide">Chargement…</p></div>';
+    }
+
+    if (vueActive === 'elections') vueElections(vue, silencieux);
+    else if (vueActive === 'electeurs') vueComptes(vue, 'electeur', silencieux);
+    else if (vueActive === 'gestionnaires') vueComptes(vue, 'gestionnaire', silencieux);
+    else if (vueActive === 'controleurs') vueComptes(vue, 'controleur', silencieux);
+    else if (vueActive === 'invitation') vueInvitation(vue, silencieux);
     else if (vueActive === 'suivi') vueSuivi(vue);
-    else if (vueActive === 'journal') vueJournal(vue);
+    else if (vueActive === 'journal') vueJournal(vue, silencieux);
+    else if (vueActive === 'sauvegarde') vueSauvegarde(vue, silencieux);
+}
+
+/* ============================================================
+   TEMPS RÉEL
+   ============================================================ */
+async function rafraichirSilencieux() {
+    if (!user) return;
+    // Une modale ouverte = saisie en cours : on ne touche à rien.
+    if (!modale.classList.contains('cache')) return;
+
+    await chargerStats();
+    afficherVue(true);
 }
 
 /* ============================================================
@@ -151,9 +181,18 @@ async function chargerStats() {
 /* ============================================================
    VUE : ÉLECTIONS (admin)
    ============================================================ */
-async function vueElections(conteneur) {
+async function vueElections(conteneur, silencieux = false) {
     const { data } = await API.get('elections.php');
+    if (!data.success) return;
     const elections = data.data || [];
+
+    // Rien n'a changé : on ne reconstruit pas le tableau (focus conservé).
+    const signature = elections.map(e =>
+        `${e.id}:${e.statut}:${e.resultats_publics ? 1 : 0}:${e.nb_candidats}:${e.nb_votes ?? ''}:${e.zone || ''}`
+    ).join('|');
+    if (silencieux && conteneur.dataset.signature === signature) return;
+    conteneur.dataset.signature = signature;
+
     const titre = estAdmin ? 'Élections' : 'Élections de classe';
     const badgeClasse = !estAdmin && user.zone
         ? `<span class="badge badge-bleu">Classe ${echapper(user.zone)}</span>` : '';
@@ -606,7 +645,7 @@ async function modaleResultats(election) {
    admin        : tous les comptes, création + modification.
    gestionnaire : électeurs de SA classe, suppression seule.
    ============================================================ */
-async function vueComptes(conteneur, role) {
+async function vueComptes(conteneur, role, silencieux = false) {
     const titres = {
         electeur: 'Électeurs',
         gestionnaire: 'Délégués',
@@ -624,6 +663,7 @@ async function vueComptes(conteneur, role) {
 
     const { ok, data } = await API.get('electeurs.php?' + params.toString());
     if (!ok || !data.success) {
+        if (silencieux) return;
         conteneur.innerHTML = `<div class="carte">
             <div class="carte-titre"><span>${titreRole}</span></div>
             <p class="vide">${echapper(data.error || 'Liste indisponible.')}</p>
@@ -635,6 +675,13 @@ async function vueComptes(conteneur, role) {
     const total = Number(data.total || comptes.length);
     const page = Number(data.page || 1);
     const pages = Number(data.pages || 1);
+
+    // Rien n'a changé : on ne reconstruit pas le tableau (focus conservé).
+    const signature = `${role}|${page}|${total}|` + comptes.map(u =>
+        `${u.id}:${u.actif ? 1 : 0}:${u.zone || ''}:${u.matricule}:${u.prenom}:${u.nom}:${u.email || ''}`
+    ).join(',');
+    if (silencieux && conteneur.dataset.signature === signature) return;
+    conteneur.dataset.signature = signature;
 
     let html = `
         <div class="carte">
@@ -898,9 +945,10 @@ function itemInvitation(inv, avecZone) {
     </div>`;
 }
 
-async function vueInvitation(conteneur) {
+async function vueInvitation(conteneur, silencieux = false) {
     const { ok, data } = await API.get('invitations.php');
     if (!ok || !data.success) {
+        if (silencieux) return;
         conteneur.innerHTML = `<div class="carte">
             <div class="carte-titre"><span>Liens d'inscription</span></div>
             <p class="vide">${echapper(data.error || 'Indisponible.')}</p>
@@ -911,6 +959,13 @@ async function vueInvitation(conteneur) {
     const invitations = data.invitations || [];
     const zones = data.zones || [];
     const maZone = data.ma_zone;
+
+    // Rien n'a changé : on ne reconstruit pas la vue (focus conservé).
+    const signature = `${maZone || ''}|${zones.join(',')}|` + invitations.map(i =>
+        `${i.id}:${i.actif ? 1 : 0}:${i.expire_at || ''}:${i.inscrits}:${i.auto_inscrits}:${i.token}`
+    ).join(',');
+    if (silencieux && conteneur.dataset.signature === signature) return;
+    conteneur.dataset.signature = signature;
 
     let html = '';
 
@@ -1091,9 +1146,15 @@ function vueSuivi(conteneur) {
 /* ============================================================
    VUE : JOURNAL
    ============================================================ */
-async function vueJournal(conteneur) {
+async function vueJournal(conteneur, silencieux = false) {
     const { data } = await API.get('journal.php?limite=100');
+    if (!data.success) return;
     const lignes = data.data || [];
+
+    // Rien n'a changé : on ne reconstruit pas le tableau.
+    const signature = lignes.map(l => l.id).join(',');
+    if (silencieux && conteneur.dataset.signature === signature) return;
+    conteneur.dataset.signature = signature;
 
     let html = `<div class="carte"><div class="carte-titre">Journal des actions</div>`;
     if (lignes.length === 0) {
@@ -1117,9 +1178,184 @@ async function vueJournal(conteneur) {
 }
 
 /* ============================================================
+   VUE : SAUVEGARDE (admin)
+   ============================================================ */
+const LIBELLE_TABLE = {
+    utilisateurs: 'Comptes',
+    elections: 'Élections',
+    candidats: 'Candidats',
+    votes: 'Bulletins (anonymes)',
+    emargements: 'Émargements',
+    ouvertures: 'Ouvertures de bulletin',
+    invitations: 'Liens de classe',
+    journal: 'Journal d\'audit',
+};
+
+function formaterOctets(n) {
+    const v = Number(n) || 0;
+    if (v < 1024) return v + ' o';
+    if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' Ko';
+    return (v / (1024 * 1024)).toFixed(2) + ' Mo';
+}
+
+async function vueSauvegarde(conteneur, silencieux = false) {
+    const { ok, data } = await API.get('sauvegarde.php?action=etat');
+    if (!ok || !data.success) {
+        if (silencieux) return;
+        conteneur.innerHTML = `<div class="carte">
+            <div class="carte-titre"><span>Sauvegarde</span></div>
+            <p class="vide">${echapper(data.error || 'État indisponible.')}</p>
+        </div>`;
+        return;
+    }
+
+    const s = data.sauvegarde;
+    const tables = data.tables || {};
+    const total = Object.values(tables).reduce((somme, n) => somme + Number(n || 0), 0);
+
+    // Rien n'a changé : on ne reconstruit pas la vue.
+    const signature = JSON.stringify([s, tables, data.hors_web]);
+    if (silencieux && conteneur.dataset.signature === signature) return;
+    conteneur.dataset.signature = signature;
+
+    let html = `<div class="carte">
+        <div class="carte-titre">
+            <span>Sauvegarde de la base
+                <span class="badge badge-bleu">V${echapper(data.version || '')}</span></span>
+            <span class="badge ${s ? 'badge-vert' : 'badge-orange'}">${
+                s ? 'Sauvegarde disponible' : 'Aucune sauvegarde'
+            }</span>
+        </div>
+        <p class="aide">
+            Une copie complète de la base est créée automatiquement au plus une fois
+            par 24 heures, dès qu'un administrateur ouvre cet onglet. Les mots de passe
+            ne sont jamais lisibles : seules leurs empreintes sont enregistrées.
+        </p>
+        <div class="grille-stats">
+            <div class="stat"><div class="valeur">${total}</div><div class="libelle">Enregistrements</div></div>
+            <div class="stat"><div class="valeur">${Object.keys(tables).length}</div><div class="libelle">Tables</div></div>
+            <div class="stat"><div class="valeur">${s ? formaterDateHeure(s.cree_le) : '—'}</div><div class="libelle">Dernière sauvegarde</div></div>
+            <div class="stat"><div class="valeur">${s ? formaterOctets(s.taille) : '—'}</div><div class="libelle">Taille du fichier</div></div>
+        </div>
+        <div class="actions" style="margin-top:16px;">
+            <button class="btn btn-primaire" id="btn-creer-sauvegarde">Créer une sauvegarde maintenant</button>
+            <button class="btn btn-neutre" id="btn-telecharger-sauvegarde" ${s ? '' : 'disabled'}>
+                Télécharger la dernière
+            </button>
+        </div>
+        <div id="message-sauvegarde"></div>
+        <p class="aide" style="margin-top:14px;">
+            Stockage : ${data.hors_web
+                ? 'hors de la racine web, inaccessible depuis Internet.'
+                : 'dossier protégé par un refus d\'accès web (.htaccess).'}
+            ${s ? ` ${s.nombre} fichier(s) conservé(s), rotation automatique.` : ''}
+        </p>
+    </div>`;
+
+    html += `<div class="carte">
+        <div class="carte-titre">Contenu de la base</div>
+        <div class="tableau-scroll"><table class="tableau">
+            <thead><tr><th>Table</th><th>Enregistrements</th></tr></thead><tbody>`;
+    for (const [table, nombre] of Object.entries(tables)) {
+        html += `<tr>
+            <td>${echapper(LIBELLE_TABLE[table] || table)}</td>
+            <td>${Number(nombre) || 0}</td>
+        </tr>`;
+    }
+    html += `</tbody></table></div></div>`;
+
+    html += `<div class="carte">
+        <div class="carte-titre">Copie locale automatique</div>
+        <p class="aide">
+            Le script <code>outils/miroir-local.php</code> recopie cette base en
+            <b>lecture seule</b> vers le PostgreSQL de votre machine. Il est prévu pour
+            une tâche planifiée (toutes les 3 heures) et conserve aussi un instantané
+            JSON dans <code>sauvegardes/</code>. Lancement manuel :
+            <code>sauvegarder-local.bat</code>.
+        </p>
+        <div class="alerte alerte-info">
+            La base en ligne n'est jamais modifiée par la copie locale : la connexion
+            de synchronisation est en lecture seule et ne peut rien écrire en production.
+        </div>
+    </div>`;
+
+    conteneur.innerHTML = html;
+
+    document.getElementById('btn-creer-sauvegarde')?.addEventListener('click', async (e) => {
+        const bouton = e.currentTarget;
+        bouton.disabled = true;
+        bouton.textContent = 'Sauvegarde en cours…';
+
+        const rep = await API.post('sauvegarde.php?action=creer', {});
+
+        bouton.disabled = false;
+        bouton.textContent = 'Créer une sauvegarde maintenant';
+
+        if (!rep.ok || !rep.data.success) {
+            afficherMessage('message-sauvegarde', rep.data.error || 'Sauvegarde impossible.', 'erreur');
+            return;
+        }
+
+        const confirmation = rep.data.message || 'Sauvegarde créée.';
+        chargerStats();
+        // La vue est reconstruite avec les nouveaux compteurs : on
+        // affiche le message APRÈS, sinon il serait effacé.
+        await vueSauvegarde(conteneur, false);
+        afficherMessage('message-sauvegarde', confirmation, 'succes');
+    });
+
+    document.getElementById('btn-telecharger-sauvegarde')
+        ?.addEventListener('click', telechargerSauvegarde);
+}
+
+async function telechargerSauvegarde() {
+    const bouton = document.getElementById('btn-telecharger-sauvegarde');
+    if (bouton) bouton.disabled = true;
+
+    try {
+        const reponse = await fetch('api/sauvegarde.php?action=telecharger', {
+            headers: { Authorization: 'Bearer ' + API.getToken() },
+        });
+
+        if (!reponse.ok) {
+            let message = 'Téléchargement impossible.';
+            try {
+                const err = await reponse.json();
+                if (err && err.error) message = err.error;
+            } catch (e) { /* réponse non JSON */ }
+            afficherMessage('message-sauvegarde', message, 'erreur');
+            return;
+        }
+
+        const blob = await reponse.blob();
+        const entete = reponse.headers.get('Content-Disposition') || '';
+        const trouve = /filename="([^"]+)"/.exec(entete);
+        const nom = trouve ? trouve[1] : 'sauvegarde.json';
+
+        const url = URL.createObjectURL(blob);
+        const lien = document.createElement('a');
+        lien.href = url;
+        lien.download = nom;
+        document.body.appendChild(lien);
+        lien.click();
+        lien.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+        afficherMessage('message-sauvegarde', 'Sauvegarde téléchargée.', 'succes');
+    } catch (e) {
+        afficherMessage('message-sauvegarde', 'Téléchargement impossible.', 'erreur');
+    } finally {
+        if (bouton) bouton.disabled = false;
+    }
+}
+
+/* ============================================================
    DÉMARRAGE
    ============================================================ */
 if (user) {
     chargerStats();
     afficherVue();
+    // Temps réel : rafraîchit les données dès qu'elles changent,
+    // sans recharger la page.
+    TempsReel.demarrer({ intervalle: 5000, callback: rafraichirSilencieux });
 }

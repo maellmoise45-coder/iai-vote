@@ -30,6 +30,15 @@ Options -Indexes
     Header set Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 </IfModule>
 
+# Pages HTML : toujours revalidees aupres du serveur, pour que
+# chaque mise a jour soit visible sans vidage de cache. Les CSS/JS
+# portent un numero de version (?v=10) et peuvent rester en cache.
+<IfModule mod_headers.c>
+    <FilesMatch "\.html$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>
+
 # Interdire l'accès direct aux fichiers sensibles
 <FilesMatch "\.(sql|md|env|example|ini|log|sh|ya?ml|bak|old|local\.php)$">
     Require all denied

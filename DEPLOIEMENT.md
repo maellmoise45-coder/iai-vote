@@ -1,4 +1,4 @@
-# Guide de déploiement — Digital-Elect V1.3 (alternative Render)
+# Guide de déploiement — Digital-Elect V1.4 (alternative Render)
 
 > ⚠️ **Note (2026) :** Render **exige une carte bancaire**, même pour la base
 > PostgreSQL gratuite. L'application est donc déployée sur **alwaysdata**
@@ -156,15 +156,24 @@ psql "$DATABASE_URL" -f database/migration_v5_elections_classe.sql
 - **Liens de classe** : le délégué génère un lien depuis l'onglet **Ma classe**.
   Il impose la zone de la classe ; un seul lien actif à la fois (validité
   90 jours). Les comptes créés sont marqués `auto_inscrit`.
+- **Temps réel** : `js/temps-reel.js` interroge `api/sync.php` (empreinte
+  scopée, pas de données métier) et ne recharge que si quelque chose a changé.
+  `api/cache/` doit être inscriptible par PHP et est protégé par `.htaccess`.
+- **Sauvegarde** : `api/sauvegarde.php` (admin) écrit hors de la racine web quand
+  possible, sinon dans `sauvegardes/` protégé par `.htaccess`. Noms aléatoires,
+  droits `0600`, rotation 14 fichiers, auto toutes les 24 h à l'ouverture de
+  l'onglet Sauvegarde.
+- **Miroir local** (poste de travail, pas sur le serveur) : `outils/miroir-local.php`
+  lit la production en **lecture seule** et synchronise PostgreSQL local + un
+  instantané JSON ; `outils/miroir.local.php` contient les secrets et n'est
+  jamais versionné.
 - **Diagramme en bandes** : affichage CSS/JS pur (`js/graphe.js`), pourcentages
-  calculés sur les votants ; direct toutes les 5 s après le vote.
+  calculés sur les votants.
 - **Sécurité** : `.htaccess` (en-têtes + CSP) est copié dans l'image Docker ;
   le `Dockerfile` active déjà `AllowOverride All` et le module `headers`.
-- **Secrets** : `api/config.local.php` est exclu de l'image Docker
-  (`.dockerignore`) ; en production Docker/Render, utilisez les variables
+- **Secrets** : `api/config.local.php` et `outils/miroir.local.php` sont exclus
+  de Git/de l'image Docker ; en production Docker/Render, utilisez les variables
   d'environnement.
-- **Base locale** : PostgreSQL portable dans `C:\xampp\pgsql`, base `iai_vote`
-  (voir `demarrer-postgres.bat` / `arreter-postgres.bat`).
 - **Ne committez jamais** de fichier `.env` ni `api/config.local.php`.
 
 ---

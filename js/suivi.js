@@ -2,16 +2,15 @@
    Digital-Elect — suivi du vote en direct
    ------------------------------------------------------------
    Module partagé par le tableau de bord admin et la page
-   contrôleur. Il interroge /api/suivi.php et rafraîchit
-   automatiquement les agrégats (participation par zone et
-   résultats live) toutes les 5 secondes.
+   contrôleur. Il interroge /api/suivi.php et rafraîchit les
+   agrégats (participation par zone et résultats live) dès que
+   les données changent, via le moteur TempsReel.
 
    Aucun choix individuel n'est jamais affiché : uniquement
    des totaux par zone et par candidat.
    ============================================================ */
 
 const Suivi = (() => {
-    let minuteur = null;
     let electionId = null;
     let conteneur = null;
     let selecteur = null;
@@ -24,10 +23,6 @@ const Suivi = (() => {
     let electionMeta = null;
 
     function arreter() {
-        if (minuteur) {
-            clearInterval(minuteur);
-            minuteur = null;
-        }
         if (selecteur && surChangement) {
             selecteur.removeEventListener('change', surChangement);
         }
@@ -100,7 +95,7 @@ const Suivi = (() => {
             votants: participation.votants || 0,
             nuls: nuls > 0 ? nuls : null,
             note: `${participation.votes_valides || 0} bulletin(s) valide(s) sur `
-                + `${participation.votants || 0} votant(s) — mise à jour automatique toutes les 5 secondes.`,
+                + `${participation.votants || 0} votant(s) — mise à jour automatique en temps réel.`,
         });
     }
 
@@ -209,7 +204,6 @@ const Suivi = (() => {
         }
 
         rafraichir();
-        minuteur = setInterval(rafraichir, 5000);
     }
 
     return { demarrer, arreter, rafraichir };
